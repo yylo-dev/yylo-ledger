@@ -179,18 +179,18 @@ class TaskCLI:
         import sys
 
         # Get the command name from sys.argv[0]
-        command_path = sys.argv[0] if sys.argv else 'task'
+        command_path = sys.argv[0] if sys.argv else 'yylo-ledger'
         command_name = os.path.basename(command_path)
 
         # Handle different scenarios
         if command_name in CONSOLE_COMMAND_NAMES:
             return command_name
         elif command_name.endswith('.py'):
-            # Direct Python execution, use 'task' as fallback
-            return 'task'
+            # Direct Python execution uses the canonical public identity.
+            return 'yylo-ledger'
         else:
-            # Could be task script or other name
-            return command_name
+            # Development wrappers and embedded callers use the canonical identity.
+            return 'yylo-ledger'
 
     def _create_parser(self) -> argparse.ArgumentParser:
         """
@@ -246,7 +246,7 @@ class TaskCLI:
         parser.add_argument(
             '--version',
             action='version',
-            version=f'task {self.VERSION}'
+            version=f'yylo-ledger {self.VERSION}'
         )
 
         # Subcommands
