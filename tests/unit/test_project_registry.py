@@ -32,8 +32,8 @@ def target_project(tmp_path: Path) -> Path:
 
 def test_access_is_disabled_and_deny_all_by_default(tmp_path, monkeypatch):
     root = source_project(tmp_path)
-    monkeypatch.delenv("JUNO_KANBAN_REGISTRY_ENABLED", raising=False)
-    monkeypatch.delenv("JUNO_KANBAN_REGISTRY_ALLOWED_PROJECTS", raising=False)
+    monkeypatch.delenv("YYLO_LEDGER_REGISTRY_ENABLED", raising=False)
+    monkeypatch.delenv("YYLO_LEDGER_REGISTRY_ALLOWED_PROJECTS", raising=False)
     policy = load_access_policy(root)
     assert policy.enabled is False
     assert policy.allowed_projects == frozenset()
@@ -41,12 +41,12 @@ def test_access_is_disabled_and_deny_all_by_default(tmp_path, monkeypatch):
 
 def test_environment_overrides_config_but_enablement_never_implies_allow_all(tmp_path, monkeypatch):
     root = source_project(tmp_path, {"enabled": False, "allowedProjects": ["from-config"]})
-    monkeypatch.setenv("JUNO_KANBAN_REGISTRY_ENABLED", "true")
+    monkeypatch.setenv("YYLO_LEDGER_REGISTRY_ENABLED", "true")
     policy = load_access_policy(root)
     assert policy.enabled is True
     assert policy.allowed_projects == frozenset({"from-config"})
 
-    monkeypatch.setenv("JUNO_KANBAN_REGISTRY_ALLOWED_PROJECTS", "from-env,second")
+    monkeypatch.setenv("YYLO_LEDGER_REGISTRY_ALLOWED_PROJECTS", "from-env,second")
     policy = load_access_policy(root)
     assert policy.allowed_projects == frozenset({"from-env", "second"})
 
@@ -56,8 +56,8 @@ def test_invalid_policy_fails_closed(tmp_path, monkeypatch):
     with pytest.raises(RegistryError, match="enabled"):
         load_access_policy(root)
     root = source_project(tmp_path / "valid", {"enabled": False, "allowedProjects": ["ok"]})
-    monkeypatch.setenv("JUNO_KANBAN_REGISTRY_ENABLED", "sometimes")
-    with pytest.raises(RegistryError, match="JUNO_KANBAN_REGISTRY_ENABLED"):
+    monkeypatch.setenv("YYLO_LEDGER_REGISTRY_ENABLED", "sometimes")
+    with pytest.raises(RegistryError, match="YYLO_LEDGER_REGISTRY_ENABLED"):
         load_access_policy(root)
 
 
@@ -96,7 +96,7 @@ def test_route_uses_target_wrapper_exact_args_and_sanitized_environment(tmp_path
     target = target_project(tmp_path)
     path = tmp_path / "projects.json"
     ProjectRegistry(path).add("target", target)
-    monkeypatch.setenv("JUNO_KANBAN_REGISTRY_PATH", str(path))
+    monkeypatch.setenv("YYLO_LEDGER_REGISTRY_PATH", str(path))
     for key in (
         "JUNO_TASK_ROOT", "JUNO_CONTROLLER_BRANCH", "JUNO_CONTROLLER_SOURCE",
         "JUNO_WORKSPACE_ROLE", "JUNO_WORKSPACE_ENFORCEMENT", "VIRTUAL_ENV",
@@ -121,7 +121,7 @@ def test_route_uses_target_wrapper_exact_args_and_sanitized_environment(tmp_path
     assert seen["path"] == wrapper
     assert seen["argv"] == [wrapper, "create", "exact body"]
     assert seen["cwd"] == str(target.resolve())
-    assert seen["env"]["JUNO_KANBAN_REGISTRY_HOP"] == "1"
+    assert seen["env"]["YYLO_LEDGER_REGISTRY_HOP"] == "1"
     for key in (
         "JUNO_TASK_ROOT", "JUNO_CONTROLLER_BRANCH", "JUNO_CONTROLLER_SOURCE",
         "JUNO_WORKSPACE_ROLE", "JUNO_WORKSPACE_ENFORCEMENT", "VIRTUAL_ENV",
@@ -134,7 +134,7 @@ def test_route_rejects_disabled_disallowed_missing_and_recursive_access(tmp_path
     target = target_project(tmp_path)
     path = tmp_path / "projects.json"
     ProjectRegistry(path).add("target", target)
-    monkeypatch.setenv("JUNO_KANBAN_REGISTRY_PATH", str(path))
+    monkeypatch.setenv("YYLO_LEDGER_REGISTRY_PATH", str(path))
 
     disabled = source_project(tmp_path, {"enabled": False, "allowedProjects": ["target"]})
     with pytest.raises(RegistryError, match="disabled"):
@@ -148,6 +148,6 @@ def test_route_rejects_disabled_disallowed_missing_and_recursive_access(tmp_path
     with pytest.raises(RegistryError, match="not registered"):
         route_to_project("missing", ["list"], allowed)
 
-    monkeypatch.setenv("JUNO_KANBAN_REGISTRY_HOP", "1")
+    monkeypatch.setenv("YYLO_LEDGER_REGISTRY_HOP", "1")
     with pytest.raises(RegistryError, match="recursion"):
         route_to_project("missing", ["list"], allowed)

@@ -30,7 +30,7 @@ def test_project_management_requires_opt_in_and_does_not_initialize_task_storage
 ):
     source = make_source(tmp_path, enabled=False)
     monkeypatch.chdir(source)
-    monkeypatch.setenv("JUNO_KANBAN_REGISTRY_PATH", str(tmp_path / "registry.json"))
+    monkeypatch.setenv("YYLO_LEDGER_REGISTRY_PATH", str(tmp_path / "registry.json"))
 
     assert main(["project", "status"]) == ExitCode.SUCCESS
     assert json.loads(capsys.readouterr().out) == {"enabled": False, "source": "project-config"}
@@ -43,7 +43,7 @@ def test_project_add_list_show_remove_contract(tmp_path, monkeypatch, capsys):
     source = make_source(tmp_path, enabled=True, allowed=["target"])
     target = make_target(tmp_path)
     monkeypatch.chdir(source)
-    monkeypatch.setenv("JUNO_KANBAN_REGISTRY_PATH", str(tmp_path / "registry.json"))
+    monkeypatch.setenv("YYLO_LEDGER_REGISTRY_PATH", str(tmp_path / "registry.json"))
 
     assert main(["project", "add", "target", "--path", str(target)]) == 0
     added = json.loads(capsys.readouterr().out)

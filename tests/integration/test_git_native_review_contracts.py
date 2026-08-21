@@ -112,7 +112,7 @@ def legacy_wheel(tmp_path_factory):
 def benchmark_receipt(path: Path, package_version=__version__):
     return write_receipt(path, "installed-cli-benchmark", tasks=140000, gates={"all": True},
         identity={"package_version": package_version, "cli_sha256": "a" * 64,
-                  "benchmark_sha256": hashlib.sha256((Path(__file__).parents[2] / "src/kanban/benchmark_git_native.py").read_bytes()).hexdigest(),
+                  "benchmark_sha256": hashlib.sha256((Path(__file__).parents[2] / "src/yylo_ledger/benchmark_git_native.py").read_bytes()).hexdigest(),
                   "measured_commands": {key: [key] for key in ("get", "list", "search", "mutation", "cold_rebuild")}})
 
 

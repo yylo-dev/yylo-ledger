@@ -139,10 +139,10 @@ def test_incomplete_child_or_activation_fault_has_zero_partial_writes(tmp_path, 
     storage.update_task(external.id, {"status": "done"})
     admission = _admission(storage, tmp_path / "admission-2.json", umbrella.id, [child.id])
     before = _board_bytes(storage)
-    monkeypatch.setenv("JUNO_KANBAN_FAULT_POINT", "after_activate_2")
+    monkeypatch.setenv("YYLO_LEDGER_FAULT_POINT", "after_activate_2")
     with pytest.raises(OSError, match="injected mutation fault"):
         storage.finalize_umbrella(admission, evidence, "abc1234")
-    monkeypatch.delenv("JUNO_KANBAN_FAULT_POINT")
+    monkeypatch.delenv("YYLO_LEDGER_FAULT_POINT")
     assert _board_bytes(storage) == before
     assert storage.find_task(child.id)["status"] == "todo"
     assert storage.find_task(umbrella.id)["status"] == "in_progress"

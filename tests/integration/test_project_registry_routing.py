@@ -26,7 +26,7 @@ def test_two_project_route_preserves_stdin_and_sanitizes_source_state(tmp_path):
         f"pathlib.Path({str(args_file)!r}).write_text(json.dumps(sys.argv[1:]))\n"
         f"pathlib.Path({str(env_file)!r}).write_text(json.dumps({{k: os.environ.get(k) for k in "
         "['JUNO_TASK_ROOT','JUNO_CONTROLLER_BRANCH','JUNO_WORKSPACE_ROLE','VIRTUAL_ENV',"
-        "'PYTHONPATH','JUNO_KANBAN_REGISTRY_HOP','JUNO_KANBAN_INVOCATION_ROOT']}))\n"
+        "'PYTHONPATH','YYLO_LEDGER_REGISTRY_HOP','YYLO_LEDGER_INVOCATION_ROOT']}))\n"
         f"pathlib.Path({str(stdin_file)!r}).write_bytes(sys.stdin.buffer.read())\n"
         "print('destination-wrapper')\n",
         encoding="utf-8",
@@ -37,7 +37,7 @@ def test_two_project_route_preserves_stdin_and_sanitizes_source_state(tmp_path):
 
     environment = dict(os.environ)
     environment.update({
-        "JUNO_KANBAN_REGISTRY_PATH": str(registry_path),
+        "YYLO_LEDGER_REGISTRY_PATH": str(registry_path),
         "JUNO_TASK_ROOT": str(source),
         "JUNO_CONTROLLER_BRANCH": "source-branch",
         "JUNO_WORKSPACE_ROLE": "controller",
@@ -61,5 +61,5 @@ def test_two_project_route_preserves_stdin_and_sanitizes_source_state(tmp_path):
     routed_env = json.loads(env_file.read_text())
     for key in ("JUNO_TASK_ROOT", "JUNO_CONTROLLER_BRANCH", "JUNO_WORKSPACE_ROLE", "VIRTUAL_ENV", "PYTHONPATH"):
         assert routed_env[key] is None
-    assert routed_env["JUNO_KANBAN_REGISTRY_HOP"] == "1"
-    assert routed_env["JUNO_KANBAN_INVOCATION_ROOT"] == str(target.resolve())
+    assert routed_env["YYLO_LEDGER_REGISTRY_HOP"] == "1"
+    assert routed_env["YYLO_LEDGER_INVOCATION_ROOT"] == str(target.resolve())

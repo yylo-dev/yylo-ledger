@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Optional, Tuple, Dict, Any, List
 from copy import deepcopy
 
+from .identity import migrate_user_home
+
 
 class ConfigError(Exception):
     """Configuration-related errors."""
@@ -74,7 +76,7 @@ class Config:
             "status": "Available statuses: backlog, todo, in_progress, done, archive",
             "tags": "Tags can be any alphanumeric string with underscores/hyphens (max 50 chars, max 20 per task)",
             "workflow": "Workflow: backlog → todo → in_progress → done → archive",
-            "general": "Juno Ledger shell-based task manager"
+            "general": "YYLO Ledger shell-based task manager"
         },
         "error_messages": {
             "invalid_status": "Error: Invalid status '{status}'. Allowed: {allowed_values}",
@@ -138,7 +140,7 @@ class Config:
 
         Configuration loading priority:
         1. Default configuration (base)
-        2. Global configuration (~/.juno-kanban/config.json) - overrides defaults
+        2. Global configuration (~/.yylo-ledger/config.json) - overrides defaults
         3. Local configuration (.juno_task/tasks/config.json) - overrides global
 
         Args:
@@ -599,10 +601,9 @@ class Config:
         Get path to global configuration file.
 
         Returns:
-            Path to ~/.juno-kanban/config.json
+            Path to ~/.yylo-ledger/config.json
         """
-        home = Path.home()
-        return str(home / ".juno-kanban" / "config.json")
+        return str(migrate_user_home() / "config.json")
 
     def load_global_config(self) -> Dict[str, Any]:
         """

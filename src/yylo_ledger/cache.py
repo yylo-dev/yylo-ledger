@@ -25,7 +25,7 @@ class TaskCache:
     def _connect(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         existed = self.path.exists()
-        timeout = float(os.environ.get("JUNO_KANBAN_CACHE_TIMEOUT_SECONDS", "0.25"))
+        timeout = float(os.environ.get("YYLO_LEDGER_CACHE_TIMEOUT_SECONDS", "0.25"))
         db = sqlite3.connect(self.path, timeout=max(0.0, timeout))
         db.execute("PRAGMA busy_timeout=%d" % max(0, int(timeout * 1000)))
         if existed:

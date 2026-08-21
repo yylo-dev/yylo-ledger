@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Automated PyPI Build and Publish Script for juno-kanban
+# Automated PyPI Build and Publish Script for yylo-ledger
 #
-# This script automates the process of building and publishing the juno-kanban
+# This script automates the process of building and publishing the yylo-ledger
 # package to PyPI with proper version management, cleanup, and isolated environment.
 #
 # Prerequisites:
@@ -62,7 +62,7 @@ for arg in "$@"; do
             shift
             ;;
         --help)
-            echo "Automated PyPI Build and Publish Script for juno-kanban"
+            echo "Automated PyPI Build and Publish Script for yylo-ledger"
             echo ""
             echo "Usage: $0 [--dry-run] [--test-pypi]"
             echo ""
@@ -240,27 +240,27 @@ show_post_upload_instructions() {
     local current_version="$1"
 
     echo
-    log_success "Package juno-kanban v$current_version has been published!"
+    log_success "Package yylo-ledger v$current_version has been published!"
     echo
     echo "Installation instructions:"
     if [ "$TEST_PYPI" = true ]; then
-        echo "  pip install --index-url https://test.pypi.org/simple/ juno-kanban"
+        echo "  pip install --index-url https://test.pypi.org/simple/ yylo-ledger"
     else
-        echo "  pip install juno-kanban"
+        echo "  pip install yylo-ledger"
     fi
     echo
     echo "Usage:"
-    echo "  juno-kanban --help"
-    echo "  juno-kanban create \"My first task\" --tags important"
-    echo "  juno-kanban list --limit 5"
+    echo "  yylo-ledger --help"
+    echo "  yylo-ledger create \"My first task\" --tags important"
+    echo "  yylo-ledger list --limit 5"
     echo
 }
 
-# Function to upgrade juno-kanban in the monorepo's .venv_juno
+# Function to upgrade yylo-ledger in the monorepo's .venv_juno
 upgrade_local_install() {
     local current_version="$1"
 
-    # Find the monorepo .venv_juno (one level up from juno_kanban/)
+    # Find the monorepo .venv_juno (one level up from yylo_ledger/)
     local mono_root
     mono_root="$(dirname "$PROJECT_ROOT")"
     local mono_venv="$mono_root/.venv_juno"
@@ -270,25 +270,25 @@ upgrade_local_install() {
         return 0
     fi
 
-    log_info "Upgrading juno-kanban in $mono_venv to v$current_version..."
+    log_info "Upgrading yylo-ledger in $mono_venv to v$current_version..."
 
     # Activate the monorepo venv and upgrade from PyPI
     (
         source "$mono_venv/bin/activate"
-        python3 -m pip install --upgrade "juno-kanban==$current_version" --quiet 2>/dev/null \
-            || python3 -m pip install --upgrade juno-kanban --quiet 2>/dev/null
+        python3 -m pip install --upgrade "yylo-ledger==$current_version" --quiet 2>/dev/null \
+            || python3 -m pip install --upgrade yylo-ledger --quiet 2>/dev/null
     )
 
     if [ $? -eq 0 ]; then
-        log_success "Local .venv_juno upgraded to juno-kanban v$current_version"
+        log_success "Local .venv_juno upgraded to yylo-ledger v$current_version"
     else
-        log_warning "Failed to upgrade local .venv_juno — run: pip install --upgrade juno-kanban"
+        log_warning "Failed to upgrade local .venv_juno — run: pip install --upgrade yylo-ledger"
     fi
 }
 
 # Main execution
 main() {
-    log_info "Starting PyPI publish process for juno-kanban"
+    log_info "Starting PyPI publish process for yylo-ledger"
 
     # Check system dependencies
     check_dependencies

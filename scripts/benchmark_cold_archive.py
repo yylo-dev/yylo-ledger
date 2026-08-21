@@ -4,7 +4,7 @@
 Fixture construction uses the package codecs because creating 100,000 tasks one
 process at a time is not a useful CLI benchmark. Every operation recorded in the
 report (plan/create/query/cache/doctor) is dispatched through the installed
-``juno-kanban`` entry point.
+``yylo-ledger`` entry point.
 """
 from __future__ import annotations
 
@@ -23,10 +23,10 @@ from copy import deepcopy
 from importlib.metadata import version as package_version
 from pathlib import Path
 
-from kanban.codec import MarkdownTaskCodec
-from kanban.config import Config
-from kanban.ledger import _hash_event
-from kanban.storage import TaskStorage
+from yylo_ledger.codec import MarkdownTaskCodec
+from yylo_ledger.config import Config
+from yylo_ledger.ledger import _hash_event
+from yylo_ledger.storage import TaskStorage
 
 OLD = "2025-01-01T00:00:00Z"
 RECENT = "2026-07-23T00:00:00Z"
@@ -65,12 +65,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--tasks", required=True, type=int, choices=(10000, 100000))
     parser.add_argument("--report", required=True)
-    parser.add_argument("--cli", default=shutil.which("juno-kanban"))
+    parser.add_argument("--cli", default=shutil.which("yylo-ledger"))
     parser.add_argument("--keep")
     args = parser.parse_args()
     cli = Path(args.cli or "").resolve()
     if not cli.is_file():
-        parser.error("--cli must name an installed juno-kanban entry point")
+        parser.error("--cli must name an installed yylo-ledger entry point")
     report_path = Path(args.report).resolve()
     report_path.parent.mkdir(parents=True, exist_ok=True)
     context = None if args.keep else tempfile.TemporaryDirectory(prefix="juno-cold-archive-")
@@ -227,7 +227,7 @@ def main() -> int:
                      "source_head": subprocess.check_output(["git", "-C", str(Path(__file__).resolve().parents[1]),
                                                               "rev-parse", "HEAD"], text=True).strip(),
                      "benchmark_sha256": sha_file(Path(__file__)), "cli": str(cli),
-                     "cli_sha256": sha_file(cli), "package_version": package_version("juno-kanban"),
+                     "cli_sha256": sha_file(cli), "package_version": package_version("yylo-ledger"),
                      "platform": platform.platform(), "python": sys.version},
         "commands": {"plan": command("archive-pack", "plan", "--report", "<external>"),
                      "create": command("archive-pack", "create", "--plan", "<external>", "--report", "<external>"),

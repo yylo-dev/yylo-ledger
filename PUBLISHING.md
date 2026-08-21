@@ -1,6 +1,6 @@
-# Juno Ledger PyPI Publishing Guide
+# YYLO Ledger PyPI Publishing Guide
 
-This document provides complete instructions for building and publishing Juno Ledger. The established PyPI distribution name remains `juno-kanban` for backward compatibility.
+This document provides complete instructions for building and publishing YYLO Ledger. The established PyPI distribution name remains `yylo-ledger` for backward compatibility.
 
 ## Quick Start
 
@@ -93,7 +93,7 @@ Edit `setup.py` and change the version:
 
 ```python
 setup(
-    name="juno-kanban",
+    name="yylo-ledger",
     version="0.1.1",  # Update this line
     # ... rest of setup
 )
@@ -142,12 +142,12 @@ Test the uploaded package:
 
 ```bash
 # Install from TestPyPI
-pip install --index-url https://test.pypi.org/simple/ juno-kanban
+pip install --index-url https://test.pypi.org/simple/ yylo-ledger
 
 # Test basic functionality
-juno-ledger --help
-juno-ledger create "Test task"
-juno-ledger list
+yylo-ledger --help
+yylo-ledger create "Test task"
+yylo-ledger list
 ```
 
 ### Step 4: Publish to PyPI
@@ -165,7 +165,7 @@ git tag v$(python -c "import re; print(re.search(r'version=\"([^\"]+)\"', open('
 git push origin --tags
 
 # Test installation from PyPI
-pip install --upgrade juno-kanban
+pip install --upgrade yylo-ledger
 ```
 
 ## Script Options
@@ -242,29 +242,29 @@ source .venv/bin/activate
 twine check dist/*
 
 # View package contents
-tar -tzf dist/juno_kanban-0.1.0.tar.gz
-unzip -l dist/juno_kanban-0.1.0-py3-none-any.whl
+tar -tzf dist/yylo_ledger-0.1.0.tar.gz
+unzip -l dist/yylo_ledger-0.1.0-py3-none-any.whl
 ```
 
 ### Testing Installation
 
 ```bash
 # Test from different sources
-pip install juno-kanban                              # From PyPI
-pip install --index-url https://test.pypi.org/simple/ juno-kanban  # From TestPyPI
-pip install dist/juno_kanban-0.1.0-py3-none-any.whl # Local wheel
+pip install yylo-ledger                              # From PyPI
+pip install --index-url https://test.pypi.org/simple/ yylo-ledger  # From TestPyPI
+pip install dist/yylo_ledger-0.1.0-py3-none-any.whl # Local wheel
 ```
 
 ## Package Information
 
-- **Product Name**: Juno Ledger
-- **Package Name**: `juno-kanban` (compatibility identity)
-- **Preferred Entry Points**: `juno-ledger`, `ledger-juno`, `jl`
-- **Legacy Entry Points**: `juno-kanban`, `juno-feedback`, `kanban-juno`
+- **Product Name**: YYLO Ledger
+- **Package Name**: `yylo-ledger` (compatibility identity)
+- **Preferred Entry Points**: `yylo-ledger`, `ledger-juno`, `jl`
+- **Legacy Entry Points**: `yylo-ledger`, `juno-feedback`, `kanban-juno`
 - **Python Versions**: 3.8+
 - **Dependencies**: `ruamel.yaml>=0.18.6,<0.19`
 - **License**: MIT
-- **Repository**: https://github.com/askbudi/juno-ledger
+- **Repository**: https://github.com/yylo-dev/yylo-ledger
 
 ## Release Checklist
 

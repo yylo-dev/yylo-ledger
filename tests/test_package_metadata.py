@@ -18,14 +18,15 @@ pytest.importorskip("wheel", reason="wheel is required for the package release g
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "2.0.7"
+EXPECTED_VERSION = "0.1.0rc1"
 EXPECTED_CONSOLE_SCRIPTS = {
-    "juno-ledger": "kanban.cli:main",
-    "ledger-juno": "kanban.cli:main",
-    "jl": "kanban.cli:main",
-    "juno-kanban": "kanban.cli:main",
-    "juno-feedback": "kanban.cli:main",
-    "kanban-juno": "kanban.cli:main",
+    "yylo-ledger": "yylo_ledger.cli:main",
+    "juno-ledger": "yylo_ledger.cli:legacy_main",
+    "ledger-juno": "yylo_ledger.cli:legacy_main",
+    "jl": "yylo_ledger.cli:legacy_main",
+    "juno-kanban": "yylo_ledger.cli:legacy_main",
+    "juno-feedback": "yylo_ledger.cli:legacy_main",
+    "kanban-juno": "yylo_ledger.cli:legacy_main",
 }
 
 
@@ -58,7 +59,7 @@ def build_wheel(source: Path, destination: Path) -> Path:
         [sys.executable, "setup.py", "-q", "bdist_wheel", "--dist-dir", str(destination)],
         cwd=source, check=True, stdin=subprocess.DEVNULL, capture_output=True, text=True,
     )
-    return next(destination.glob("juno_kanban-*.whl"))
+    return next(destination.glob("yylo_ledger-*.whl"))
 
 
 def test_direct_and_sdist_derived_wheels_keep_runtime_dependency(tmp_path: Path) -> None:
@@ -70,7 +71,7 @@ def test_direct_and_sdist_derived_wheels_keep_runtime_dependency(tmp_path: Path)
         [sys.executable, "setup.py", "-q", "sdist", "--dist-dir", str(tmp_path / "sdist")],
         cwd=source, check=True, stdin=subprocess.DEVNULL, capture_output=True, text=True,
     )
-    archive = next((tmp_path / "sdist").glob("juno-kanban-*.tar.gz"))
+    archive = next((tmp_path / "sdist").glob("yylo_ledger-*.tar.gz"))
     extracted = tmp_path / "extracted"
     with tarfile.open(archive) as bundle:
         bundle.extractall(extracted)

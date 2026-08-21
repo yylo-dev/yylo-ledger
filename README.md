@@ -1,8 +1,8 @@
-# Juno Ledger — Git-Native Task Management
+# YYLO Ledger — Git-Native Task Management
 
-Juno Ledger is a Git-native, shell-friendly task manager for developers and LLM workflows. Canonical current state is one safe Markdown/YAML file per task; history is a separate append-only ledger and SQLite is disposable.
+YYLO Ledger is a Git-native, shell-friendly task manager for developers and LLM workflows. Canonical current state is one safe Markdown/YAML file per task; history is a separate append-only ledger and SQLite is disposable.
 
-[![Version](https://img.shields.io/badge/version-v2.0.3-blue.svg)](https://pypi.org/project/juno-kanban/)
+[![Version](https://img.shields.io/badge/version-v2.0.3-blue.svg)](https://pypi.org/project/yylo-ledger/)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Shell](https://img.shields.io/badge/shell-friendly-green.svg)](#shell-integration)
@@ -15,38 +15,38 @@ Juno Ledger is a Git-native, shell-friendly task manager for developers and LLM 
 pip install -e .
 
 # Create your first task
-juno-ledger create "Implement user authentication" --tags backend security
+yylo-ledger create "Implement user authentication" --tags backend security
 
 # Optional title + body composition
-juno-ledger create --title "Auth" --body "Implement OAuth callback handling"
+yylo-ledger create --title "Auth" --body "Implement OAuth callback handling"
 
 # List recent tasks
-juno-ledger list --limit 5
-juno-ledger list --status backlog,in_progress --sort asc   # preserve explicit status order
+yylo-ledger list --limit 5
+yylo-ledger list --status backlog,in_progress --sort asc   # preserve explicit status order
 
 # Search and filter
-juno-ledger search --status todo --tags backend
-juno-ledger search --status todo --format json             # command-level --format is supported
+yylo-ledger search --status todo --tags backend
+yylo-ledger search --status todo --format json             # command-level --format is supported
 
 # Aggregate tag usage (optionally by workflow status)
-juno-ledger tags --status todo,in_progress --format table
+yylo-ledger tags --status todo,in_progress --format table
 
 # Mark task progress with response (ID can be positional or flag)
-juno-ledger mark in_progress ABC123 --response "Started OAuth integration"
+yylo-ledger mark in_progress ABC123 --response "Started OAuth integration"
 
 # Complete with commit hash
-juno-ledger mark done --id ABC123 --response "Auth completed" --commit abc123def
+yylo-ledger mark done --id ABC123 --response "Auth completed" --commit abc123def
 
 # Declare dependencies between tasks
-juno-ledger create "Deploy to staging" --blocked-by ABC123
+yylo-ledger create "Deploy to staging" --blocked-by ABC123
 
 # Find tasks ready to work on (all blockers resolved)
-juno-ledger ready
-juno-ledger ready --sort asc   # oldest ready tasks first by last_modified
+yylo-ledger ready
+yylo-ledger ready --sort asc   # oldest ready tasks first by last_modified
 # ready now includes list-like summary counters (Displayed/Total + status breakdown)
 
 # Get safe execution order respecting dependencies
-juno-ledger order --scores
+yylo-ledger order --scores
 ```
 
 ## Immutable cold archive packs
@@ -56,15 +56,15 @@ Boards can explicitly move up to 1,000 old terminal tasks at a time from hot Mar
 Archival is never automatic. With owner authorization, a clean Git worktree/index, and durable new report paths outside the repository:
 
 ```bash
-juno-ledger archive-pack plan --status done,archive --older-than 90d --max-tasks 1000 \
+yylo-ledger archive-pack plan --status done,archive --older-than 90d --max-tasks 1000 \
   --target-bytes 26214400 --hard-max-bytes 47185920 \
   --report /external/receipts/archive-plan.json
 # Independently review source HEAD, config/policy hashes, selected IDs/revisions, and batches.
-juno-ledger archive-pack create --plan /external/receipts/archive-plan.json \
+yylo-ledger archive-pack create --plan /external/receipts/archive-plan.json \
   --report /external/receipts/archive-create.json
-juno-ledger archive-pack doctor
-juno-ledger doctor
-juno-ledger archive-search --tag backend --before 2026-01-01 --limit 20 --projection metadata
+yylo-ledger archive-pack doctor
+yylo-ledger doctor
+yylo-ledger archive-search --tag backend --before 2026-01-01 --limit 20 --projection metadata
 ```
 
 Plans are revision-bound and fail closed when Git/config/reservations/archive inventory or selected task history changes. Sealed packs/manifests must never be edited or appended. Archived IDs stay terminal and globally reserved; create a new hot task related to the archived ID for follow-up work. Production archival, push/deploy, and post-deploy E2E require separate authorization. Receipts contain hashes/IDs/instructions, not duplicated task bodies or responses.
@@ -90,21 +90,21 @@ Cross-project access is disabled by default. Enable only the aliases that the cu
 }
 ```
 
-Register initialized local projects in the single user registry (`~/.juno-kanban/projects.json`) and route any read or write explicitly:
+Register initialized local projects in the single user registry (`~/.yylo-ledger/projects.json`) and route any read or write explicitly:
 
 ```bash
-juno-ledger project add juno-code --path /absolute/path/to/juno-code
-juno-ledger project list
-juno-ledger --project juno-code create --body "Issue discovered elsewhere" --tags bug
-juno-ledger --project juno-code list --status todo
-juno-ledger project remove juno-code
+yylo-ledger project add juno-code --path /absolute/path/to/juno-code
+yylo-ledger project list
+yylo-ledger --project juno-code create --body "Issue discovered elsewhere" --tags bug
+yylo-ledger --project juno-code list --status todo
+yylo-ledger project remove juno-code
 ```
 
 Environment policy has precedence over project config:
 
 ```bash
-export JUNO_KANBAN_REGISTRY_ENABLED=true
-export JUNO_KANBAN_REGISTRY_ALLOWED_PROJECTS=juno-code,convert-if-chat
+export YYLO_LEDGER_REGISTRY_ENABLED=true
+export YYLO_LEDGER_REGISTRY_ALLOWED_PROJECTS=juno-code,convert-if-chat
 ```
 
 Enabling without an allowlist grants access to nothing. Routing executes the destination project's `.juno_task/scripts/kanban.sh`, so its controller, `.venv_juno`, compatibility checks, stdin rules, and write guards remain authoritative. Missing, stale, malformed, disallowed, or recursive routes fail without falling back to the source board. This backing destination-wrapper boundary matters because selecting a foreign storage path with the caller runtime could bypass project-specific safety. Two-project subprocess tests verify the implementation preserves exact stdin and reaches only the selected target.
@@ -114,19 +114,20 @@ Enabling without an allowlist grants access to nothing. Routing executes the des
 ### PyPI (Recommended)
 
 ```bash
-pip install juno-kanban
+pip install yylo-ledger
 ```
 
-The preferred command is `juno-ledger`; `ledger-juno` and `jl` are equivalent
-new spellings. Complete backward compatibility is preserved: `juno-kanban`,
-`juno-feedback`, and `kanban-juno` remain registered and route to the same CLI.
-The PyPI distribution stays `juno-kanban`, and the Python import stays `kanban`.
+The canonical distribution, command, and import are `yylo-ledger`, `yylo-ledger`,
+and `yylo_ledger`. During the bounded 0.1 RC migration window, the six former
+console scripts (`juno-ledger`, `ledger-juno`, `jl`, `juno-kanban`,
+`juno-feedback`, and `kanban-juno`) emit a deprecation action and delegate to
+the same runtime; the deprecated `kanban` import is a single-runtime bridge.
 
 ### Development Mode
 
 ```bash
-git clone https://github.com/askbudi/juno-ledger.git
-cd juno-ledger
+git clone https://github.com/yylo-dev/yylo-ledger.git
+cd yylo-ledger
 pip install -e .
 ```
 
@@ -138,23 +139,23 @@ pip install -e .
 
 ## Shell Completion (Tab Autocomplete)
 
-`juno-ledger` ships a native completion script generator for every command alias:
+`yylo-ledger` ships a native completion script generator for every command alias:
 
 ```bash
 # One-time test in current shell
-source <(juno-ledger completion bash)
+source <(yylo-ledger completion bash)
 
 # Persist for bash
-echo 'source <(juno-ledger completion bash)' >> ~/.bashrc
+echo 'source <(yylo-ledger completion bash)' >> ~/.bashrc
 
 # Persist for zsh
-echo 'source <(juno-ledger completion zsh)' >> ~/.zshrc
+echo 'source <(yylo-ledger completion zsh)' >> ~/.zshrc
 
 # Fish
-juno-ledger completion fish > ~/.config/fish/completions/juno-ledger.fish
+yylo-ledger completion fish > ~/.config/fish/completions/yylo-ledger.fish
 ```
 
-After reloading your shell, `juno-ledger c<TAB><TAB>` suggests commands like `create`/`completion`,
+After reloading your shell, `yylo-ledger c<TAB><TAB>` suggests commands like `create`/`completion`,
 and command-specific flags/choice values are also suggested (e.g. `list --sort <TAB>`).
 
 ## Core Features
@@ -186,7 +187,7 @@ and command-specific flags/choice values are also suggested (e.g. `list --sort <
 - Umbrella child reconciliation is available only through `umbrella-finalize`. Its sealed `umbrella-admission` receipt must bind the umbrella revision and every child revision and state `task_id`, `owner_id` (the umbrella ID), and `admitted: true` per child. Admitted IDs must exactly equal `blocked_by`; `related_tasks` are never closed. A sealed evidence receipt bound to that umbrella ID and commit is required. Activation updates all task/ledger pairs in one recoverable transaction, and replay emits no additional events
 
 ```bash
-juno-ledger umbrella-finalize UMB123 \
+yylo-ledger umbrella-finalize UMB123 \
   --admission-receipt /external/admission.json \
   --evidence-receipt /external/evidence.json --commit abc123 \
   --receipt-file /external/finalization.json
@@ -208,60 +209,60 @@ Operational conversion, rollback, reconciliation, cache, safety, test, and bench
 
 ```bash
 # Basic task creation
-juno-ledger create "Fix authentication bug"
+yylo-ledger create "Fix authentication bug"
 
 # With tags and status
-juno-ledger create "Add user profile page" --status todo --tags frontend ui
+yylo-ledger create "Add user profile page" --status todo --tags frontend ui
 
 # Using --body flag (both formats work)
-juno-ledger create --body "Implement OAuth" --tags security backend
+yylo-ledger create --body "Implement OAuth" --tags security backend
 
 # Optional title merged into body as: title:{title}\n\n{body}
-juno-ledger create --title "OAuth" --body "Implement provider callback validation"
+yylo-ledger create --title "OAuth" --body "Implement provider callback validation"
 
 # Read shell-sensitive markdown exactly from a UTF-8 file or stdin
-juno-ledger create --body-file task.md --status todo --tags feature backend
-cat task.md | juno-ledger create --body-file -
+yylo-ledger create --body-file task.md --status todo --tags feature backend
+cat task.md | yylo-ledger create --body-file -
 
 # Why file/stdin matters: shells expand unquoted backticks and $() before
-# Juno Ledger can inspect argv. For quoted literals that survive parsing,
+# YYLO Ledger can inspect argv. For quoted literals that survive parsing,
 # create rejects inline backticks, $(), heredoc-like <<, and multiline bodies
 # and asks you to use --body-file PATH or --body-file - instead.
 
 # Trailing quoted body after list flags is supported
-juno-ledger create --status todo --related-tasks ABC123 "Add integration tests for callback flow"
+yylo-ledger create --status todo --related-tasks ABC123 "Add integration tests for callback flow"
 ```
 
 ### Searching & Listing
 
 ```bash
 # List recent tasks (sorted by last modified)
-juno-ledger list --limit 10
+yylo-ledger list --limit 10
 
 # Search by status
-juno-ledger search --status in_progress
+yylo-ledger search --status in_progress
 
 # Search by tags
-juno-ledger search --tags backend --tags security
+yylo-ledger search --tags backend --tags security
 
 # Aggregate tag counts across all tasks
-juno-ledger tags
+yylo-ledger tags
 
 # Aggregate tag counts only for active work
-juno-ledger tags --status todo,in_progress --format json
-juno-ledger tags --status todo in_progress --format table
+yylo-ledger tags --status todo,in_progress --format json
+yylo-ledger tags --status todo in_progress --format table
 
 # Search open tasks (no agent response)
-juno-ledger search --open
+yylo-ledger search --open
 
 # Search recent tasks
-juno-ledger search --recent --limit 5
+yylo-ledger search --recent --limit 5
 
 # Control search sort order by last_modified
-juno-ledger search --status todo --sort asc --limit 5
+yylo-ledger search --status todo --sort asc --limit 5
 
 # Multiple conditions (AND logic)
-juno-ledger search --status todo --tags backend --limit 3
+yylo-ledger search --status todo --tags backend --limit 3
 ```
 
 `--sort asc|desc` uses one shared contract across `list`, `search`, and `ready`:
@@ -275,38 +276,38 @@ juno-ledger search --status todo --tags backend --limit 3
 
 ```bash
 # Update status (positional or --id both supported)
-juno-ledger update ABC123 --status in_progress
-juno-ledger update --id ABC123 --status in_progress
+yylo-ledger update ABC123 --status in_progress
+yylo-ledger update --id ABC123 --status in_progress
 
 # Add agent response
-juno-ledger update --id ABC123 --response "Working on OAuth flow"
+yylo-ledger update --id ABC123 --response "Working on OAuth flow"
 
 # Replace body/response from files without shell quoting risks
-juno-ledger update ABC123 --body-file task.md
-juno-ledger update ABC123 --response-file response.md
+yylo-ledger update ABC123 --body-file task.md
+yylo-ledger update ABC123 --response-file response.md
 
 # Set commit hash
-juno-ledger update --id ABC123 --commit abc123def
+yylo-ledger update --id ABC123 --commit abc123def
 
 # Update tags
-juno-ledger update ABC123 --tags urgent backend security
+yylo-ledger update ABC123 --tags urgent backend security
 ```
 
 ### Mark Command (Streamlined Workflow)
 
 ```bash
 # Mark with required response
-juno-ledger mark todo ABC123 --response "Ready to start"
+yylo-ledger mark todo ABC123 --response "Ready to start"
 
 # Mark as done with commit (recommended)
-juno-ledger mark done --id ABC123 --response "Feature completed" --commit abc123
+yylo-ledger mark done --id ABC123 --response "Feature completed" --commit abc123
 
 # Read response from a file or stdin, preserving code fences/backticks/$VARIABLES
-juno-ledger mark done --id ABC123 --response-file response.md --commit abc123
-cat response.md | juno-ledger mark done --id ABC123 --response-file -
+yylo-ledger mark done --id ABC123 --response-file response.md --commit abc123
+cat response.md | yylo-ledger mark done --id ABC123 --response-file -
 
 # Mark without commit (shows helpful reminder)
-juno-ledger mark done ABC123 --response "Bug fixed"
+yylo-ledger mark done ABC123 --response "Bug fixed"
 # Output: Consider adding commit hash with --commit flag
 ```
 
@@ -314,32 +315,32 @@ juno-ledger mark done ABC123 --response "Bug fixed"
 
 ```bash
 # Create a task that's blocked by another
-juno-ledger create "Deploy to prod" --blocked-by ABC123
+yylo-ledger create "Deploy to prod" --blocked-by ABC123
 
 # Or declare blockers via body markup (auto-parsed)
-juno-ledger create "Run integration tests [blocked_by]ABC123, DEF456[/blocked_by]"
+yylo-ledger create "Run integration tests [blocked_by]ABC123, DEF456[/blocked_by]"
 
 # Add/remove dependencies after creation
-juno-ledger deps add --id GHI789 --blocked-by ABC123 DEF456
-juno-ledger deps remove --id GHI789 --blocked-by ABC123
+yylo-ledger deps add --id GHI789 --blocked-by ABC123 DEF456
+yylo-ledger deps remove --id GHI789 --blocked-by ABC123
 
 # Shorthand add (action inferred when --blocked-by is present)
-juno-ledger deps --id GHI789 --blocked-by ABC123 DEF456
+yylo-ledger deps --id GHI789 --blocked-by ABC123 DEF456
 
 # Query dependency info for a task
-juno-ledger deps ABC123
-juno-ledger deps --id ABC123
+yylo-ledger deps ABC123
+yylo-ledger deps --id ABC123
 # Returns: blockers (met/unmet), dependents, priority score
 
 # Find tasks ready to work on (all blockers resolved)
-juno-ledger ready
-juno-ledger ready --sort asc --limit 5                         # oldest ready tasks first
-juno-ledger ready --status backlog,in_progress --sort desc     # backlog group first, then in_progress
-juno-ledger ready --tag backend --sort desc                    # newest backend-ready tasks first
+yylo-ledger ready
+yylo-ledger ready --sort asc --limit 5                         # oldest ready tasks first
+yylo-ledger ready --status backlog,in_progress --sort desc     # backlog group first, then in_progress
+yylo-ledger ready --tag backend --sort desc                    # newest backend-ready tasks first
 
 # Get safe execution order (topological sort)
-juno-ledger order
-juno-ledger order --scores  # includes priority scores
+yylo-ledger order
+yylo-ledger order --scores  # includes priority scores
 ```
 
 #### Body Markup for Dependencies
@@ -370,33 +371,33 @@ Dependencies and related tasks can be declared inline in the task body:
 
 ```bash
 # Get specific task(s) (includes dependency info)
-juno-ledger get ABC123
-juno-ledger get --id ABC123
-juno-ledger get ABC123 --compact              # related task details are ID-only
-juno-ledger get ABC123 DEF456 --format json   # ordered multi-ID lookup
-juno-ledger show ABC123 DEF456 --format json  # alias
+yylo-ledger get ABC123
+yylo-ledger get --id ABC123
+yylo-ledger get ABC123 --compact              # related task details are ID-only
+yylo-ledger get ABC123 DEF456 --format json   # ordered multi-ID lookup
+yylo-ledger show ABC123 DEF456 --format json  # alias
 
 # Archive task (preserves data, sets status to archive)
-juno-ledger archive ABC123
-juno-ledger archive --id ABC123
+yylo-ledger archive ABC123
+yylo-ledger archive --id ABC123
 
 # Preview one sealed merge plan, review it, then apply that exact plan.
-juno-ledger merge /path/to/source/.juno_task --into ./.juno_task \
+yylo-ledger merge /path/to/source/.juno_task --into ./.juno_task \
   --dry-run --plan-file /tmp/kanban-merge-plan.json
-juno-ledger merge /path/to/source/.juno_task --into ./.juno_task \
+yylo-ledger merge /path/to/source/.juno_task --into ./.juno_task \
   --apply-plan /tmp/kanban-merge-plan.json \
   --receipt-file /tmp/kanban-merge-receipt.json
 
 # Show help
-juno-ledger --help
-juno-ledger COMMAND --help
+yylo-ledger --help
+yylo-ledger COMMAND --help
 ```
 
 ## Output Formats
 
 ### NDJSON (Default)
 ```bash
-juno-ledger search --status todo
+yylo-ledger search --status todo
 ```
 ```json
 {"id": "ABC123", "status": "todo", "body": "Fix bug", "tags": ["backend"]}
@@ -405,8 +406,8 @@ juno-ledger search --status todo
 
 ### JSON (Structured)
 ```bash
-juno-ledger search --status todo --format json
-# also supported: juno-kanban --format json search --status todo
+yylo-ledger search --status todo --format json
+# also supported: yylo-ledger --format json search --status todo
 ```
 ```json
 [
@@ -417,15 +418,15 @@ juno-ledger search --status todo --format json
 
 ### XML
 ```bash
-juno-ledger search --status todo --format xml
+yylo-ledger search --status todo --format xml
 ```
 
 ### Table (Human-readable)
 ```bash
-juno-ledger search --status todo --format table
+yylo-ledger search --status todo --format table
 
 # tags command renders markdown table output in table mode
-juno-ledger tags --status todo,in_progress --format table
+yylo-ledger tags --status todo,in_progress --format table
 ```
 
 ## Shell Integration
@@ -436,35 +437,35 @@ Perfect integration with `jq` for data processing:
 
 ```bash
 # Extract task IDs
-juno-ledger list | jq -r '.id'
+yylo-ledger list | jq -r '.id'
 
 # Filter by specific criteria
-juno-ledger list | jq 'select(.status == "todo")'
+yylo-ledger list | jq 'select(.status == "todo")'
 
 # Count tasks by status
-juno-ledger list | jq -r '.status' | sort | uniq -c
+yylo-ledger list | jq -r '.status' | sort | uniq -c
 
 # Get tasks with specific tags
-juno-ledger list | jq 'select(.feature_tags[]? == "backend")'
+yylo-ledger list | jq 'select(.feature_tags[]? == "backend")'
 
 # Clean data output (suppress summary)
-juno-ledger list 2>/dev/null | jq '.'
+yylo-ledger list 2>/dev/null | jq '.'
 ```
 
 ### Automation Examples
 
 ```bash
 # Daily standup - get your current work
-juno-ledger search --status in_progress | jq -r '.body'
+yylo-ledger search --status in_progress | jq -r '.body'
 
 # Review completed work with commits
-juno-ledger search --status done | jq -r '"✅ \(.body) (\(.commit_hash // "no commit"))"'
+yylo-ledger search --status done | jq -r '"✅ \(.body) (\(.commit_hash // "no commit"))"'
 
 # Find urgent tasks
-juno-ledger search --tags urgent | jq -r '"⚠️  \(.body)"'
+yylo-ledger search --tags urgent | jq -r '"⚠️  \(.body)"'
 
 # Git hook integration
-git log -1 --format="%H" | xargs -I {} juno-ledger search --commit {}
+git log -1 --format="%H" | xargs -I {} yylo-ledger search --commit {}
 ```
 
 ## Configuration
@@ -549,7 +550,7 @@ Each task is stored in safe YAML front matter plus marker-delimited Markdown bod
 
 ```bash
 # Invalid tag format
-juno-ledger create "Task" --tags "frontend v1"
+yylo-ledger create "Task" --tags "frontend v1"
 ```
 ```
 Validation error: Invalid tag format: 'frontend v1'
@@ -568,13 +569,13 @@ Did you mean: 'frontend_v1'?
 
 ```bash
 # Invalid status transition
-juno-ledger update ABC123 --status done  # (current: backlog)
+yylo-ledger update ABC123 --status done  # (current: backlog)
 ```
 ```
 Cannot transition from 'backlog' to 'done'.
 Allowed transitions from 'backlog': todo, in_progress, archive
 
-Use: juno-ledger update ABC123 --status todo
+Use: yylo-ledger update ABC123 --status todo
 ```
 
 ## Performance
@@ -601,46 +602,46 @@ Use: juno-ledger update ABC123 --status todo
 
 ```bash
 # Morning planning
-juno-ledger create "Review pull requests" --tags review daily
-juno-ledger create "Fix authentication bug" --tags backend urgent --status todo
+yylo-ledger create "Review pull requests" --tags review daily
+yylo-ledger create "Fix authentication bug" --tags backend urgent --status todo
 
 # Start working
-juno-ledger mark in_progress -ID ABC123 --response "Investigating auth issue"
+yylo-ledger mark in_progress -ID ABC123 --response "Investigating auth issue"
 
 # During development
-juno-ledger update ABC123 --response "Found root cause in JWT validation"
+yylo-ledger update ABC123 --response "Found root cause in JWT validation"
 
 # Complete work
-juno-ledger mark done -ID ABC123 --response "Fixed JWT expiry handling" --commit abc123
+yylo-ledger mark done -ID ABC123 --response "Fixed JWT expiry handling" --commit abc123
 
 # End of day review
-juno-ledger search --status done | jq -r '"✅ \(.body)"'
+yylo-ledger search --status done | jq -r '"✅ \(.body)"'
 ```
 
 ### Dependency-Aware Workflow
 
 ```bash
 # Create a pipeline with dependencies
-juno-ledger create "Write unit tests" --tags backend testing --status todo
+yylo-ledger create "Write unit tests" --tags backend testing --status todo
 # Returns ID: A1b2C3
 
-juno-ledger create "Implement feature" --blocked-by A1b2C3 --tags backend
+yylo-ledger create "Implement feature" --blocked-by A1b2C3 --tags backend
 # Returns ID: D4e5F6
 
-juno-ledger create "Deploy to staging" --blocked-by D4e5F6 --tags devops
+yylo-ledger create "Deploy to staging" --blocked-by D4e5F6 --tags devops
 # Returns ID: G7h8I9
 
 # See what's ready to work on
-juno-ledger ready --sort desc
+yylo-ledger ready --sort desc
 # Only A1b2C3 shows — the others are blocked (newest ready tasks first)
 
 # Get execution order with priority scores
-juno-ledger order --scores
+yylo-ledger order --scores
 # A1b2C3 (score: 2) → D4e5F6 (score: 1) → G7h8I9 (score: 0)
 
 # Complete first task, check what's unblocked
-juno-ledger mark done -ID A1b2C3 --response "Tests written" --commit abc123
-juno-ledger ready --sort asc
+yylo-ledger mark done -ID A1b2C3 --response "Tests written" --commit abc123
+yylo-ledger ready --sort asc
 # Now D4e5F6 is ready (and asc sort keeps oldest ready tasks first)
 ```
 
@@ -648,13 +649,13 @@ juno-ledger ready --sort asc
 
 ```bash
 # See what teammates are working on
-juno-ledger search --status in_progress | jq -r '"👤 \(.body) - \(.agent_response)"'
+yylo-ledger search --status in_progress | jq -r '"👤 \(.body) - \(.agent_response)"'
 
 # Find tasks needing review
-juno-ledger search --status review --tags urgent
+yylo-ledger search --status review --tags urgent
 
 # Weekly retrospective
-juno-ledger search --status done | jq 'group_by(.commit_hash) | length'
+yylo-ledger search --status done | jq 'group_by(.commit_hash) | length'
 ```
 
 ### Git Integration
@@ -662,11 +663,11 @@ juno-ledger search --status done | jq 'group_by(.commit_hash) | length'
 ```bash
 # Link completed tasks to commits
 git log --oneline | head -5 | while read commit message; do
-  echo "🔗 $commit: $(juno-ledger search --commit $commit | jq -r '.body // "No task linked"')"
+  echo "🔗 $commit: $(yylo-ledger search --commit $commit | jq -r '.body // "No task linked"')"
 done
 
 # Pre-commit hook: ensure task exists
-if ! juno-ledger search --status in_progress | grep -q "$(git log -1 --format='%s')"; then
+if ! yylo-ledger search --status in_progress | grep -q "$(git log -1 --format='%s')"; then
   echo "⚠️  No in-progress task found for this commit"
 fi
 ```
@@ -679,7 +680,7 @@ fi
 ```bash
 # Ensure pip installed to correct environment
 which pip
-pip show juno-kanban
+pip show yylo-ledger
 
 # Try reinstalling
 pip install -e . --force-reinstall
@@ -688,16 +689,16 @@ pip install -e . --force-reinstall
 **Slow search performance:**
 ```bash
 # Rebuild the disposable query cache at any time
-juno-ledger cache rebuild
+yylo-ledger cache rebuild
 ```
 
 **jq parsing errors:**
 ```bash
 # Ensure you're using recent version (v1.3.0+)
-juno-ledger --version
+yylo-ledger --version
 
 # Use stderr redirection if needed
-juno-ledger list 2>/dev/null | jq '.'
+yylo-ledger list 2>/dev/null | jq '.'
 ```
 
 **Configuration issues:**
@@ -711,13 +712,13 @@ cat .juno_task/tasks/config.json | jq '.'
 
 ### Getting Help
 
-- **CLI Help**: `juno-ledger --help` or `juno-ledger COMMAND --help`
-- **Issues**: [GitHub Issues](https://github.com/askbudi/juno-ledger/issues)
+- **CLI Help**: `yylo-ledger --help` or `yylo-ledger COMMAND --help`
+- **Issues**: [GitHub Issues](https://github.com/yylo-dev/yylo-ledger/issues)
 - **Storage guide**: See [`docs/git-native-storage.md`](docs/git-native-storage.md)
 
 ## Contributing
 
-To contribute, open an issue or pull request in `askbudi/juno-ledger`, add tests
+To contribute, open an issue or pull request in `yylo-dev/yylo-ledger`, add tests
 for behavioral changes, and run `python3 -m pytest -q` before submission.
 
 ## License
@@ -727,7 +728,7 @@ MIT License - see LICENSE file for details.
 ## Changelog
 
 ### v1.32.0 (2026-03-22)
-- Added `tags` command for tag-level workload aggregation (`juno-kanban tags`) with `--status` filtering and output formats (`json`, `table`, `xml`, `ndjson`)
+- Added `tags` command for tag-level workload aggregation (`yylo-ledger tags`) with `--status` filtering and output formats (`json`, `table`, `xml`, `ndjson`)
 - Added explicit status-order contract for `list` and `ready` when `--status` is provided (e.g. `--status backlog,in_progress` preserves that group order)
 - Added `ready --status ...` filter support to match list/search filtering workflows
 - Added list/search parity summaries to `ready` (`Displayed: X of Y` + status breakdown; JSON summary object for `--format json`)
@@ -736,8 +737,8 @@ MIT License - see LICENSE file for details.
 ### v1.31.0 (2026-03-21)
 - Added `search --sort asc|desc` to control `last_modified` ordering in both ripgrep and Python fallback paths
 - Added command-level `search --format ...` support (in addition to global `--format`) and list-like result summaries for search output
-- Added multi-ID retrieval for `get` / `show` (`juno-kanban get ID1 ID2 ...`) with ordered JSON output
-- Added native shell completion generator (`juno-kanban completion [bash|zsh|fish]`) with parser-driven command/option completions
+- Added multi-ID retrieval for `get` / `show` (`yylo-ledger get ID1 ID2 ...`) with ordered JSON output
+- Added native shell completion generator (`yylo-ledger completion [bash|zsh|fish]`) with parser-driven command/option completions
 
 ### v1.30.0 (2026-03-20)
 - Added `##` related-task markup parsing (`##ID`, `## ID`, `## ID1 ID2 ##`) alongside `[task_id]...[/task_id]`

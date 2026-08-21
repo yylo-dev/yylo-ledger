@@ -1,63 +1,33 @@
+"""Deprecated import bridge for the YYLO Ledger 0.1 RC migration window.
+
+Use :mod:`yylo_ledger`. This module aliases the prior public module graph
+without duplicating runtime state or persisted data formats.
 """
-Juno Ledger
+from __future__ import annotations
 
-A Git-native, shell-friendly task manager. The Python package remains named
-``kanban`` for backward compatibility.
+import importlib
+import sys
+import warnings
 
-Main features:
-- One safe Markdown/YAML current-state file per task
-- Configurable status workflows
-- Feature tag system
-- Disposable SQLite query cache and typed custom-field search
-- LLM-optimized CLI interface
-- Atomic file operations
+warnings.warn(
+    "The 'kanban' import is deprecated; migrate to 'yylo_ledger'.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-Author: Feedback Shell Team
-License: MIT
-"""
+_CANONICAL = importlib.import_module("yylo_ledger")
+_MODULES = (
+    "archive", "benchmark_git_native", "cache", "codec", "config",
+    "graph", "ledger", "merge", "models", "project_registry", "search",
+    "storage", "validators",
+)
+for _name in _MODULES:
+    _module = importlib.import_module(f"yylo_ledger.{_name}")
+    sys.modules[f"{__name__}.{_name}"] = _module
+    globals()[_name] = _module
 
-__version__ = "2.0.7"
-__author__ = "Feedback Shell Team"
-
-# Export main classes for easy importing
-from .models import Task
-from .config import Config
-from .validators import TaskValidator, ValidationError
-
-# Import other modules when they exist
-try:
-    from .storage import TaskStorage
-except ImportError:
-    TaskStorage = None
-
-try:
-    from .search import TaskSearch
-except ImportError:
-    TaskSearch = None
-
-try:
-    from .graph import DependencyGraph
-except ImportError:
-    DependencyGraph = None
-
-try:
-    from .cli import main as cli_main
-except ImportError:
-    cli_main = None
-
-__all__ = [
-    "Task",
-    "Config",
-    "TaskValidator",
-    "ValidationError",
-]
-
-# Add modules that exist
-if TaskStorage:
-    __all__.append("TaskStorage")
-if TaskSearch:
-    __all__.append("TaskSearch")
-if DependencyGraph:
-    __all__.append("DependencyGraph")
-if cli_main:
-    __all__.append("cli_main")
+for _name in getattr(_CANONICAL, "__all__", ()):
+    globals()[_name] = getattr(_CANONICAL, _name)
+__version__ = _CANONICAL.__version__
+__author__ = _CANONICAL.__author__
+__all__ = list(getattr(_CANONICAL, "__all__", ()))

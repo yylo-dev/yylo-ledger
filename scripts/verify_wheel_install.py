@@ -13,24 +13,24 @@ with tempfile.TemporaryDirectory() as temporary:
     temp = Path(temporary)
     dist = temp / "dist"
     subprocess.run([sys.executable, "-m", "pip", "wheel", str(root), "--wheel-dir", str(dist)], check=True)
-    wheel = next(dist.glob("juno_kanban-*.whl"))
+    wheel = next(dist.glob("yylo_ledger-*.whl"))
     venv = temp / "venv"
     subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
     python = venv / "bin/python"
     subprocess.run([str(python), "-m", "pip", "install", "--no-index", "--find-links", str(dist), str(wheel)], check=True)
     probe = subprocess.check_output([
         str(python), "-c",
-        "import json,kanban.cache,kanban.codec,kanban.ledger,kanban.storage; "
-        "print(json.dumps({'modules': True}))",
+        "import json,yylo_ledger,yylo_ledger.cache,yylo_ledger.codec,yylo_ledger.ledger,yylo_ledger.storage,kanban; "
+        "print(json.dumps({'modules': True, 'version': yylo_ledger.__version__, 'legacy_same': kanban.Task is yylo_ledger.Task}))",
     ], text=True)
-    command_names = ("juno-ledger", "ledger-juno", "jl", "juno-kanban", "juno-feedback", "kanban-juno")
+    command_names = ("yylo-ledger", "juno-ledger", "ledger-juno", "jl", "juno-kanban", "juno-feedback", "kanban-juno")
     executables = [venv / "bin" / name for name in command_names]
     assert all(executable.is_file() for executable in executables)
     help_results = [
         subprocess.run([str(executable), "--help"], text=True, capture_output=True, check=True)
         for executable in executables
     ]
-    assert all("Juno Ledger task manager" in result.stdout for result in help_results)
+    assert all("YYLO Ledger task manager" in result.stdout for result in help_results)
     version_results = [
         subprocess.check_output([str(executable), "--version"], text=True).strip()
         for executable in executables

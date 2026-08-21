@@ -456,7 +456,7 @@ class TaskMerger:
 
     @staticmethod
     def _merge_fault(point: str) -> None:
-        if os.environ.get('JUNO_KANBAN_MERGE_FAULT') == point:
+        if os.environ.get('YYLO_LEDGER_MERGE_FAULT') == point:
             raise RuntimeError(f"injected merge fault: {point}")
 
     def apply_plan(self, plan: Dict[str, Any], target_path: str,

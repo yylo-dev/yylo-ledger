@@ -120,7 +120,7 @@ def test_hot_cli_get_bounds_real_sqlite_lock_and_returns_canonical_task(tmp_path
     storage.create_task(id="Bb2Bb2", body="hot task", status="todo")
     storage.rebuild_cache()
     monkeypatch.setenv("JUNO_TASK_ROOT", str(root))
-    monkeypatch.setenv("JUNO_KANBAN_CACHE_TIMEOUT_SECONDS", "0.1")
+    monkeypatch.setenv("YYLO_LEDGER_CACHE_TIMEOUT_SECONDS", "0.1")
     holder = sqlite3.connect(storage.cache.path)
     holder.execute("PRAGMA journal_mode=DELETE")
     holder.execute("PRAGMA locking_mode=EXCLUSIVE")
@@ -293,7 +293,7 @@ def test_archive_search_cli_shares_projection_redaction_and_pagination(tmp_path,
     cli = TaskCLI()
     cli.config, cli.storage = storage.config, storage
     cli.search = TaskSearch(storage.config, storage)
-    monkeypatch.setenv("JUNO_KANBAN_LIST_BODY_TRUNCATE_CHARS", "3")
+    monkeypatch.setenv("YYLO_LEDGER_LIST_BODY_TRUNCATE_CHARS", "3")
 
     args = cli.parser.parse_args(["archive-search", "--status", "done", "--limit", "1",
                                   "--projection", "summary", "-f", "ndjson"])

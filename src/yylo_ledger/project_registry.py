@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Mapping, Sequence
 
+from .identity import migrate_user_home
+
 try:  # Unix is the supported runtime for distributed Juno shell wrappers.
     import fcntl
 except ImportError:  # pragma: no cover - fail closed on unsupported platforms
@@ -21,9 +23,9 @@ except ImportError:  # pragma: no cover - fail closed on unsupported platforms
 SCHEMA_VERSION = 1
 ALIAS_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 DEFAULT_LOCK_TIMEOUT_SECONDS = 2.0
-REGISTRY_ENV = "JUNO_KANBAN_REGISTRY_PATH"
-INVOCATION_ROOT_ENV = "JUNO_KANBAN_INVOCATION_ROOT"
-HOP_ENV = "JUNO_KANBAN_REGISTRY_HOP"
+REGISTRY_ENV = "YYLO_LEDGER_REGISTRY_PATH"
+INVOCATION_ROOT_ENV = "YYLO_LEDGER_INVOCATION_ROOT"
+HOP_ENV = "YYLO_LEDGER_REGISTRY_HOP"
 
 
 class RegistryError(ValueError):
@@ -111,22 +113,22 @@ def load_access_policy(source_root: Path) -> AccessPolicy:
             )
             source = "project-config"
 
-    env_enabled = os.environ.get("JUNO_KANBAN_REGISTRY_ENABLED")
+    env_enabled = os.environ.get("YYLO_LEDGER_REGISTRY_ENABLED")
     if env_enabled is not None:
-        enabled = _parse_enabled(env_enabled, "JUNO_KANBAN_REGISTRY_ENABLED")
+        enabled = _parse_enabled(env_enabled, "YYLO_LEDGER_REGISTRY_ENABLED")
         source = "environment"
 
-    env_allowed = os.environ.get("JUNO_KANBAN_REGISTRY_ALLOWED_PROJECTS")
+    env_allowed = os.environ.get("YYLO_LEDGER_REGISTRY_ALLOWED_PROJECTS")
     if env_allowed is not None:
         raw_aliases = env_allowed.split(",") if env_allowed else []
         if any(not item.strip() for item in raw_aliases):
             raise RegistryError(
-                "invalid JUNO_KANBAN_REGISTRY_ALLOWED_PROJECTS: empty project alias"
+                "invalid YYLO_LEDGER_REGISTRY_ALLOWED_PROJECTS: empty project alias"
             )
         aliases = [_validate_alias(item.strip(), "environment project alias") for item in raw_aliases]
         if len(set(aliases)) != len(aliases):
             raise RegistryError(
-                "invalid JUNO_KANBAN_REGISTRY_ALLOWED_PROJECTS: duplicate project aliases"
+                "invalid YYLO_LEDGER_REGISTRY_ALLOWED_PROJECTS: duplicate project aliases"
             )
         allowed = frozenset(aliases)
         source = "environment"
@@ -139,7 +141,7 @@ def registry_path() -> Path:
     return (
         Path(override).expanduser().resolve()
         if override
-        else Path.home() / ".juno-kanban" / "projects.json"
+        else migrate_user_home() / "projects.json"
     )
 
 

@@ -43,10 +43,10 @@ def test_fault_at_every_activation_boundary_restores_exact_bytes(tmp_path, monke
     before = {str(path.relative_to(storage.juno_root)): path.read_bytes()
               for path in storage.juno_root.rglob("*") if path.is_file()
               and "cache" not in path.parts and "locks" not in path.parts}
-    monkeypatch.setenv("JUNO_KANBAN_FAULT_POINT", point)
+    monkeypatch.setenv("YYLO_LEDGER_FAULT_POINT", point)
     with pytest.raises(OSError, match="injected mutation fault"):
         storage.update_task(task.id, {"status": "in_progress"})
-    monkeypatch.delenv("JUNO_KANBAN_FAULT_POINT")
+    monkeypatch.delenv("YYLO_LEDGER_FAULT_POINT")
     after = {str(path.relative_to(storage.juno_root)): path.read_bytes()
              for path in storage.juno_root.rglob("*") if path.is_file()
              and "cache" not in path.parts and "locks" not in path.parts}
@@ -68,7 +68,7 @@ def test_real_process_interruption_is_doctor_visible_then_exactly_recovered(tmp_
     )
     env = os.environ.copy()
     env["PYTHONPATH"] = str(package_root / "src")
-    env["JUNO_KANBAN_CRASH_POINT"] = "after_activate_0"
+    env["YYLO_LEDGER_CRASH_POINT"] = "after_activate_0"
     child = subprocess.run([sys.executable, "-c", code], cwd=package_root, env=env)
     assert child.returncode == 91
     failures = storage.doctor()
@@ -143,8 +143,8 @@ def test_read_only_query_waits_for_cache_refresh_owner_without_replacing_cache(t
         target=_hold_cache_refresh,
         args=(str(storage.cache.path), str(lock_path), ready, 1.2),
     )
-    monkeypatch.setenv("JUNO_KANBAN_CACHE_TIMEOUT_SECONDS", "0.1")
-    monkeypatch.setenv("JUNO_KANBAN_CACHE_REFRESH_TIMEOUT_SECONDS", "2")
+    monkeypatch.setenv("YYLO_LEDGER_CACHE_TIMEOUT_SECONDS", "0.1")
+    monkeypatch.setenv("YYLO_LEDGER_CACHE_REFRESH_TIMEOUT_SECONDS", "2")
     holder.start()
     processes = []
     try:
@@ -154,8 +154,8 @@ def test_read_only_query_waits_for_cache_refresh_owner_without_replacing_cache(t
         env.pop("JUNO_TASK_ROOT", None)
         env.pop("JUNO_CONTROLLER_BRANCH", None)
         env["PYTHONPATH"] = str(package_root / "src")
-        env["JUNO_KANBAN_CACHE_TIMEOUT_SECONDS"] = "0.1"
-        env["JUNO_KANBAN_CACHE_REFRESH_TIMEOUT_SECONDS"] = "2"
+        env["YYLO_LEDGER_CACHE_TIMEOUT_SECONDS"] = "0.1"
+        env["YYLO_LEDGER_CACHE_REFRESH_TIMEOUT_SECONDS"] = "2"
         config = storage.tasks_root / "config.json"
         commands = [
             ["-f", "json", "--raw", "get", "Ab1Cd2"],
@@ -192,7 +192,7 @@ def test_mutation_lock_wait_is_bounded_and_names_owner_without_killing_holder(tm
     storage.create_task(id="Ab1Cd2", body="before", status="todo")
     lock_path = storage.juno_root / "locks" / "ab" / "ab1cd2.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("JUNO_KANBAN_LOCK_TIMEOUT_SECONDS", "0.1")
+    monkeypatch.setenv("YYLO_LEDGER_LOCK_TIMEOUT_SECONDS", "0.1")
     with lock_path.open("a+b") as holder:
         fcntl.flock(holder.fileno(), fcntl.LOCK_EX)
         holder.seek(0)
@@ -242,7 +242,7 @@ def test_direct_cli_storage_refuses_registered_stale_worktree_fallback(tmp_path,
     git(repo, "worktree", "add", "-b", "feature", str(stale))
     git(stale, "config", "--local", "juno.controller.path", str(repo))
     git(stale, "config", "--local", "juno.controller.branch", "refs/heads/main")
-    monkeypatch.setenv("JUNO_KANBAN_INVOCATION_ROOT", str(stale))
+    monkeypatch.setenv("YYLO_LEDGER_INVOCATION_ROOT", str(stale))
     with pytest.raises(ValueError, match="local fallback refused"):
         make_storage(stale).create_task(id="Ab1Cd2", body="must-not-fork")
     assert not list((stale / ".juno_task/tasks").glob("*/*.md"))
@@ -349,7 +349,7 @@ def test_doctor_diagnoses_stale_invocation_board_without_mutating_it(tmp_path, m
     stale.mkdir(parents=True)
     stale_file = stale / "Xy9Za8.md"
     stale_file.write_bytes(b"legacy stale bytes\n")
-    monkeypatch.setenv("JUNO_KANBAN_INVOCATION_ROOT", str(tmp_path / "stale"))
+    monkeypatch.setenv("YYLO_LEDGER_INVOCATION_ROOT", str(tmp_path / "stale"))
     failures = canonical.doctor()
     finding = next(item for item in failures if item.get("diagnosis") == "legacy_stale_local_board")
     assert finding["canonical_authority"] == str((tmp_path / "canonical").resolve())
@@ -360,7 +360,7 @@ def test_stale_controller_binding_refuses_before_task_or_ledger_bytes(tmp_path, 
     storage = make_storage(tmp_path)
     identity = storage._git_mutation_identity()
     identity["controller_head"] = "0" * 40
-    monkeypatch.setenv("JUNO_KANBAN_CONTROLLER_BINDING", json.dumps(identity))
+    monkeypatch.setenv("YYLO_LEDGER_CONTROLLER_BINDING", json.dumps(identity))
     with pytest.raises(ValueError, match="binding changed at controller_head"):
         storage.create_task(id="Ab1Cd2", body="must-not-land")
     assert not list(storage.tasks_root.glob("*/*.md"))

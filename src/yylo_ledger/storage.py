@@ -285,7 +285,7 @@ class TaskStorage:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a+b") as handle:
             timeout = max(0.0, float(os.environ.get(
-                "JUNO_KANBAN_CACHE_REFRESH_TIMEOUT_SECONDS", "5")))
+                "YYLO_LEDGER_CACHE_REFRESH_TIMEOUT_SECONDS", "5")))
             deadline = time.monotonic() + timeout
             while True:
                 try:
@@ -322,7 +322,7 @@ class TaskStorage:
         path = self.juno_root / "locks" / lock_id[:2] / f"{lock_id}.lock"
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a+b") as handle:
-            timeout = max(0.0, float(os.environ.get("JUNO_KANBAN_LOCK_TIMEOUT_SECONDS", "5")))
+            timeout = max(0.0, float(os.environ.get("YYLO_LEDGER_LOCK_TIMEOUT_SECONDS", "5")))
             deadline = time.monotonic() + timeout
             while True:
                 try:
@@ -377,7 +377,7 @@ class TaskStorage:
 
     def _verify_registered_controller(self):
         """Reject direct-CLI local fallback when the invocation Git repo is registered."""
-        raw = os.environ.get("JUNO_KANBAN_INVOCATION_ROOT", "").strip()
+        raw = os.environ.get("YYLO_LEDGER_INVOCATION_ROOT", "").strip()
         source = Path(raw).expanduser().resolve() if raw else Path.cwd().resolve()
         top = subprocess.run(["git", "-C", str(source), "rev-parse", "--show-toplevel"],
                              text=True, capture_output=True)
@@ -426,9 +426,9 @@ class TaskStorage:
 
     def _mutation_fault(self, point: str):
         """Stable fault boundary for unit and real-process interruption tests."""
-        if os.environ.get("JUNO_KANBAN_CRASH_POINT") == point:
+        if os.environ.get("YYLO_LEDGER_CRASH_POINT") == point:
             os._exit(91)
-        if os.environ.get("JUNO_KANBAN_FAULT_POINT") == point:
+        if os.environ.get("YYLO_LEDGER_FAULT_POINT") == point:
             raise OSError(f"injected mutation fault: {point}")
 
     @staticmethod
@@ -453,7 +453,7 @@ class TaskStorage:
                 "controller_head": head.stdout.strip() if head.returncode == 0 else None}
 
     def _verify_controller_binding(self, identity: Mapping[str, Any]):
-        raw = os.environ.get("JUNO_KANBAN_CONTROLLER_BINDING", "").strip()
+        raw = os.environ.get("YYLO_LEDGER_CONTROLLER_BINDING", "").strip()
         if not raw:
             return
         try:
@@ -1112,7 +1112,7 @@ class TaskStorage:
         # Diagnostics are intentionally read-only: abandoned transaction intent
         # and pre-contract staging are named for an owner-directed retry/recovery,
         # never merged, deleted, or silently blessed by doctor.
-        invocation_raw = os.environ.get("JUNO_KANBAN_INVOCATION_ROOT", "").strip()
+        invocation_raw = os.environ.get("YYLO_LEDGER_INVOCATION_ROOT", "").strip()
         if invocation_raw:
             invocation = Path(invocation_raw).expanduser().resolve()
             if invocation != self.project_root.resolve():

@@ -109,7 +109,7 @@ def test_activation_fault_restores_target_bytes(tmp_path, monkeypatch):
     merger = TaskMerger(target_storage.config)
     merger.merge_files([source_path], target_path, dry_run=True, plan_file=str(plan_path))
     before = canonical_hashes(target)
-    monkeypatch.setenv("JUNO_KANBAN_MERGE_FAULT", "after_tasks_activation")
+    monkeypatch.setenv("YYLO_LEDGER_MERGE_FAULT", "after_tasks_activation")
 
     with pytest.raises(RuntimeError, match="injected merge fault"):
         merger.merge_files(

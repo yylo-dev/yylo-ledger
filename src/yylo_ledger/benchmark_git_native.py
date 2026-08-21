@@ -20,10 +20,10 @@ from pathlib import Path
 
 # Fixture construction and command dispatch use the installed wheel package.
 # No private cache/storage query helper is timed.
-from kanban.cli import TaskCLI
-from kanban.codec import MarkdownTaskCodec
-from kanban.config import Config
-from kanban.storage import TaskStorage
+from yylo_ledger.cli import TaskCLI
+from yylo_ledger.codec import MarkdownTaskCodec
+from yylo_ledger.config import Config
+from yylo_ledger.storage import TaskStorage
 
 BODY = "Synthetic benchmark customer-safe payload. " * 8
 RESPONSE = "Synthetic response. " * 3
@@ -44,13 +44,13 @@ def main():
     parser.add_argument("--reuse-fixture", action="store_true",
                         help="Reuse an already committed synthetic --keep fixture")
     parser.add_argument("--report", required=True)
-    parser.add_argument("--cli", default=shutil.which("juno-kanban"))
+    parser.add_argument("--cli", default=shutil.which("yylo-ledger"))
     parser.add_argument("--iterations", type=int, default=12)
     parser.add_argument("--max-cold-rebuild-seconds", type=float, default=600.0)
     parser.add_argument("--max-cold-rebuild-rss-mib", type=float, default=2048.0)
     args = parser.parse_args()
     if not args.cli or not Path(args.cli).is_file():
-        parser.error("--cli must name the installed juno-kanban entry point")
+        parser.error("--cli must name the installed yylo-ledger entry point")
     context = tempfile.TemporaryDirectory() if not args.keep else None
     root = Path(args.keep or context.name)
     tasks = root / ".juno_task/tasks"
@@ -220,7 +220,7 @@ def main():
     report = {"receipt_version": 2, "operation": "installed-cli-benchmark", "verdict": "pass" if all(gates.values()) else "fail",
               "tasks": args.tasks, "machine": {"platform": platform.platform(), "python": sys.version, "cpu_count": os.cpu_count()},
               "identity": {"cli": str(Path(args.cli).resolve()), "cli_sha256": sha(args.cli),
-                           "package_version": package_version("juno-kanban"),
+                           "package_version": package_version("yylo-ledger"),
                            "benchmark_sha256": sha(__file__), "config_sha256": sha(config_path),
                            "fixture_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
                            "task_file_git_mode": "tracked",

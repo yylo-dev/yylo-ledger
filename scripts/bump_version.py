@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Version Bump Utility for juno-kanban
+Version Bump Utility for yylo-ledger
 
-This script automates version management for the juno-kanban package.
+This script automates version management for the yylo-ledger package.
 It increments major, minor, or patch versions in src/kanban/__init__.py and
 can optionally create a git tag.
 
@@ -58,7 +58,7 @@ class VersionBumper:
             raise ValueError("Could not find __version__ in __init__.py")
         return match.group(1)
 
-    def get_latest_published_version(self, package_name: str = "juno-kanban", timeout_seconds: int = 5) -> Optional[str]:
+    def get_latest_published_version(self, package_name: str = "yylo-ledger", timeout_seconds: int = 5) -> Optional[str]:
         """Fetch latest published package version from PyPI.
 
         Returns None when network is unavailable, package does not exist, or
@@ -81,7 +81,7 @@ class VersionBumper:
 
     def resolve_bump_baseline_version(
         self,
-        package_name: str = "juno-kanban",
+        package_name: str = "yylo-ledger",
         check_pypi: bool = True,
     ) -> Tuple[str, str, Optional[str]]:
         """Return (baseline_version, local_version, published_version).
@@ -194,7 +194,7 @@ class VersionBumper:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Version management utility for juno-kanban",
+        description="Version management utility for yylo-ledger",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__.split('\n\n')[1]  # Show examples from docstring
     )
