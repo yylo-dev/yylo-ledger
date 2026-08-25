@@ -1,24 +1,35 @@
 # Exact dependency contract for the ledger tag-release gate.
-# Every tool the release gate installs or resolves — the declared build/
-# validation tools, their transitive runtime set, and the build-isolation
-# and wheel-smoke toolchain — is pinned here so one immutable tag always
-# validates under the same dependency identities.
+# Every dependency the gate installs or resolves is pinned here: the declared
+# build/validation tools, their complete transitive set, pip itself, and the
+# build-isolation plus wheel-smoke toolchain. The workflow installs every
+# tool with -c against this file and exports PIP_CONSTRAINT to it for
+# python -m build isolation and scripts/verify_wheel_install.py, whose own
+# pip-wheel and venv installs then resolve only under this contract; its
+# wheel installation itself is --no-index so no registry resolution remains.
 build==1.5.0
 certifi==2026.7.22
+charset-normalizer==3.5.1
 docutils==0.23
+id==1.6.1
 idna==3.19
 jaraco-classes==3.4.0
+jaraco-context==6.1.2
+jaraco-functools==4.6.0
 keyring==25.7.0
+markdown-it-py==4.2.0
+mdurl==0.1.2
 more-itertools==11.1.0
 nh3==0.3.7
 packaging==26.3
+pip==25.3
+Pygments==2.21.0
 pyproject-hooks==1.2.0
+readme-renderer==45.0
 requests==2.34.2
+requests-toolbelt==1.0.0
 rfc3986==2.0.0
 rich==15.0.0
 setuptools==84.0.0
 twine==7.0.0
 urllib3==2.7.0
 wheel==0.48.0
-jaraco-context==6.1.2
-jaraco-functools==4.6.0

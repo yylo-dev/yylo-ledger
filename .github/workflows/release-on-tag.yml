@@ -75,13 +75,17 @@ jobs:
               sys.exit(1)
           prerelease = bool(re.search(r"(?:a|b|rc)\d+$", version))
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as outputs:
+              # GitHub Actions outputs must carry lowercase booleans: bash
+              # string comparisons never match Python's capitalized True.
               outputs.write(f"version={version}\n")
-              outputs.write(f"prerelease={prerelease}\n")
+              outputs.write(f"prerelease={str(prerelease).lower()}\n")
           # yy-version-derivation-block end
           PY
 
       - name: Install the exact locked artifact build and validation tools
-        run: python -m pip install --disable-pip-version-check -c .github/workflows/release-constraints.txt build twine setuptools wheel
+        run: |
+          python -m pip install --disable-pip-version-check -c .github/workflows/release-constraints.txt pip
+          python -m pip install --disable-pip-version-check -c .github/workflows/release-constraints.txt build twine setuptools wheel
 
       # Package-focused release gate: the tagged commit must build exactly
       # one wheel and one sdist whose metadata carries the tagged identity,
