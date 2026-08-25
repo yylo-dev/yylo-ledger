@@ -1,0 +1,159 @@
+name: Create the package GitHub Release from its version tag
+
+# Automatic tag-triggered counterpart of the guarded release apply flow
+# (the guarded release apply contract in the monorepo). Only exact `ledger-v*` tags
+# can trigger it; the package version must equal yylo_ledger.__version__
+# at the tagged commit; the package build gate must pass; and the release
+# is created from the already-existing remote tag with the same
+# deterministic title/notes/prerelease identity the guarded apply
+# produces, so automatic-first and guarded-first orderings converge to one
+# release. There is deliberately no asset upload (source archives are
+# provided by GitHub; the guarded apply path reconciles exact registry
+# artifacts) and no PyPI token or publication authority of any kind.
+
+on:
+  push:
+    tags:
+      - 'ledger-v*'
+
+# Least privilege: creating one GitHub Release page is the only mutation.
+permissions:
+  contents: write
+
+# One serial lane per tag: retries serialize without ever suppressing a
+# release that a previous run already created.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  PACKAGE_NAME: "yylo-ledger"
+  TAG_PREFIX: "ledger-v"
+
+jobs:
+  release:
+    name: Verify the tagged package and create its GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Enforce Python 3.12
+        run: python -c "import sys; sys.exit(0 if sys.version_info[:2] == (3, 12) else 1)"
+
+      - name: Derive and verify the exact tagged version
+        id: version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os, re, sys
+          pep440 = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:(a|b|rc)(0|[1-9]\d*))?$")
+          tag = os.environ["TAG_NAME"]
+          prefix = os.environ["TAG_PREFIX"]
+          version = tag[len(prefix):]
+          if not version or version == tag or not pep440.fullmatch(version):
+              print(f"tag {tag} does not carry a valid PEP 440 {prefix} version", file=sys.stderr)
+              sys.exit(1)
+          source = open("src/yylo_ledger/__init__.py", encoding="utf-8").read()
+          match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', source, re.MULTILINE)
+          if not match:
+              print("src/yylo_ledger/__init__.py declares no __version__", file=sys.stderr)
+              sys.exit(1)
+          if match.group(1) != version:
+              print(f"tag/manifest mismatch: {tag} expects yylo_ledger.__version__ {match.group(1)}",
+                    file=sys.stderr)
+              sys.exit(1)
+          prerelease = bool(re.search(r"(?:a|b|rc)\d+$", version))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as outputs:
+              outputs.write(f"version={version}\n")
+              outputs.write(f"prerelease={prerelease}\n")
+          PY
+
+      - name: Install the artifact build and validation tools
+        run: python -m pip install --disable-pip-version-check build twine
+
+      # Package-focused release gate: the tagged commit must build exactly
+      # one wheel and one sdist whose metadata carries the tagged identity,
+      # and that distribution must pass twine check.
+      - name: Build and verify the exact distribution
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          python -m build
+          python - <<'PY'
+          import glob, os, sys, zipfile
+          expected = os.environ["RELEASE_VERSION"]
+          wheels = sorted(glob.glob("dist/*.whl"))
+          sdists = sorted(glob.glob("dist/*.tar.gz"))
+          if len(wheels) != 1 or len(sdists) != 1:
+              print(f"expected exactly one wheel and one sdist, found {wheels} {sdists}", file=sys.stderr)
+              sys.exit(1)
+          with zipfile.ZipFile(wheels[0]) as wheel:
+              name, version = None, None
+              for entry in wheel.namelist():
+                  if entry.endswith(".dist-info/METADATA"):
+                      for line in wheel.read(entry).decode("utf-8").splitlines():
+                          if line.startswith("Name: "):
+                              name = line[len("Name: "):]
+                          elif line.startswith("Version: "):
+                              version = line[len("Version: "):]
+                      break
+          if name != os.environ.get("PACKAGE_NAME") or version != expected:
+              print(f"built metadata identity mismatch: {name} {version}", file=sys.stderr)
+              sys.exit(1)
+          print(f"built {name} {version}: {os.path.basename(wheels[0])} {os.path.basename(sdists[0])}")
+          PY
+          python -m twine check dist/*
+
+      - name: Verify or create the release identity from the existing tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          target="$(git rev-parse "${TAG_NAME}^{commit}")"
+          verify_identity() {
+            RELEASE_IDENTITY="$1" EXPECTED_TARGET="$target" python - <<'PY'
+          import json, os, sys
+          identity = json.loads(os.environ["RELEASE_IDENTITY"])
+          expected_prerelease = os.environ["RELEASE_PRERELEASE"] == "true"
+          problems = []
+          if identity.get("tagName") != os.environ["TAG_NAME"]:
+              problems.append(f"tagName {identity.get('tagName')}")
+          if identity.get("targetCommitish") != os.environ["EXPECTED_TARGET"]:
+              problems.append(f"target {identity.get('targetCommitish')} != {os.environ['EXPECTED_TARGET']}")
+          if identity.get("isPrerelease") != expected_prerelease:
+              problems.append(f"prerelease {identity.get('isPrerelease')}")
+          if problems:
+              print(f"conflicting existing release at {os.environ['TAG_NAME']}: "
+                    f"{'; '.join(problems)}; refusing to edit or delete it", file=sys.stderr)
+              sys.exit(1)
+          PY
+          }
+          if identity="$(gh release view "$TAG_NAME" --json tagName,targetCommitish,isPrerelease 2>"$RUNNER_TEMP/view.err")"; then
+            verify_identity "$identity"
+            echo "matching release already exists (guarded apply won the race); identity verified"
+            exit 0
+          fi
+          if ! grep -qi 'not found' "$RUNNER_TEMP/view.err"; then
+            cat "$RUNNER_TEMP/view.err" >&2
+            echo "release view failed without an explicit not-found response" >&2
+            exit 1
+          fi
+          notes="$(printf 'Automated %s %s release.\n\nAttached assets are the exact registry-published artifacts.' "$PACKAGE_NAME" "$RELEASE_VERSION")"
+          args=(--verify-tag --target "$target" --title "${PACKAGE_NAME} ${RELEASE_VERSION}" --notes "$notes")
+          if [ "$RELEASE_PRERELEASE" = "true" ]; then args+=(--prerelease); fi
+          gh release create "$TAG_NAME" "${args[@]}"
+          identity="$(gh release view "$TAG_NAME" --json tagName,targetCommitish,isPrerelease)"
+          verify_identity "$identity"
+          echo "created ${PACKAGE_NAME} ${RELEASE_VERSION} release from ${TAG_NAME}"
