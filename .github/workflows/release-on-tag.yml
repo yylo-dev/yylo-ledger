@@ -54,6 +54,7 @@ jobs:
         env:
           TAG_NAME: ${{ github.ref_name }}
         run: |
+          # yy-version-derivation-block begin
           python - <<'PY'
           import os, re, sys
           pep440 = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:(a|b|rc)(0|[1-9]\d*))?$")
@@ -76,22 +77,26 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as outputs:
               outputs.write(f"version={version}\n")
               outputs.write(f"prerelease={prerelease}\n")
+          # yy-version-derivation-block end
           PY
 
       - name: Install the exact locked artifact build and validation tools
-        run: python -m pip install --disable-pip-version-check build==1.5.0 twine==7.0.0
+        run: python -m pip install --disable-pip-version-check -c .github/workflows/release-constraints.txt build twine setuptools wheel
 
       # Package-focused release gate: the tagged commit must build exactly
       # one wheel and one sdist whose metadata carries the tagged identity,
       # pass twine check, and pass the repository's own isolated
-      # wheel-install runtime smoke before any release page exists.
+      # wheel-install runtime smoke before any release page exists. Every
+      # dependency-resolving step (build isolation and the wheel smoke's
+      # pip-wheel/venv installs) runs under the same committed constraints
+      # contract, so one immutable tag always validates identically.
       - name: Build and verify the exact distribution
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           rm -rf dist
-          python -m build
+          PIP_CONSTRAINT="${GITHUB_WORKSPACE}/.github/workflows/release-constraints.txt" python -m build
           python - <<'PY'
           import glob, os, sys, zipfile
           expected = os.environ["RELEASE_VERSION"]
@@ -116,7 +121,7 @@ jobs:
           print(f"built {name} {version}: {os.path.basename(wheels[0])} {os.path.basename(sdists[0])}")
           PY
           python -m twine check dist/*
-          python scripts/verify_wheel_install.py
+          PIP_CONSTRAINT="${GITHUB_WORKSPACE}/.github/workflows/release-constraints.txt" python scripts/verify_wheel_install.py
 
       - name: Verify or create the release identity from the existing tag
         env:
