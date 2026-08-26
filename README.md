@@ -2,6 +2,14 @@
 
 YYLO Ledger is a Git-native, shell-friendly task manager for developers and LLM workflows. Canonical current state is one safe Markdown/YAML file per task; history is a separate append-only ledger and SQLite is disposable.
 
+<p align="center">
+  <img src="./assets/yylo-logo-square-neon-green.png" alt="YYLO Ledger Git-native task management logo" width="180" />
+</p>
+
+<p align="center">
+  <img src="./assets/yylo-ledger-git-native-task-management-infographic.png" alt="YYLO Ledger Git-native task storage, dependency logic, commands, and facts" width="960" />
+</p>
+
 [![Version](https://img.shields.io/badge/version-0.1.0rc2-blue.svg)](https://pypi.org/project/yylo-ledger/)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
