@@ -10,6 +10,6 @@ def test_readme_badge_matches_canonical_rc_version():
     badge = re.search(r"shields\.io/badge/version-([^-]+)-blue\.svg", readme)
     version = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', package, re.MULTILINE)
     assert badge is not None and version is not None
-    assert badge.group(1) == version.group(1) == "0.1.0rc2"
+    assert badge.group(1) == version.group(1) == "0.2.0"
     assert "src', 'yylo_ledger', '__init__.py" in setup
     assert "pypi.org/project/yylo-ledger/" in readme

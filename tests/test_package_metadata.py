@@ -18,7 +18,7 @@ pytest.importorskip("wheel", reason="wheel is required for the package release g
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "0.1.0rc2"
+EXPECTED_VERSION = "0.2.0"
 EXPECTED_CONSOLE_SCRIPTS = {
     "yylo-ledger": "yylo_ledger.cli:main",
     "juno-ledger": "yylo_ledger.cli:legacy_main",

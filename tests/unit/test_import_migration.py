@@ -8,7 +8,7 @@ import yylo_ledger
 
 def test_canonical_library_api_is_public():
     assert yylo_ledger.Task is not None
-    assert yylo_ledger.__version__ == "0.1.0rc2"
+    assert yylo_ledger.__version__ == "0.2.0"
 
 
 def test_deprecated_import_shares_runtime_and_emits_action():
