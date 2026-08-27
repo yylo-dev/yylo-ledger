@@ -73,7 +73,9 @@ class TaskLedger:
 
     def prepare(self, task_id: str, operation: str, source: str, before_hash: Optional[str],
                 after_hash: str, before: Mapping[str, Any], after: Mapping[str, Any],
-                include_snapshot: bool = False) -> Dict[str, Any]:
+                include_snapshot: bool = False, *, provenance: Optional[Mapping[str, Any]] = None,
+                exact_match: Optional[Mapping[str, Any]] = None,
+                revision: Optional[int] = None) -> Dict[str, Any]:
         """Build and size-check the exact event before canonical state is replaced."""
         latest = self.latest(task_id)
         paths = changed_paths(before, after)
@@ -101,6 +103,12 @@ class TaskLedger:
         }
         if include_snapshot:
             event["snapshot"] = dict(after)
+        if provenance is not None:
+            event["provenance"] = dict(provenance)
+        if exact_match is not None:
+            event["exact_match"] = dict(exact_match)
+        if revision is not None:
+            event["revision"] = revision
         event["event_sha256"] = _hash_event(event)
         if len(_canonical(event)) + 1 > self.max_segment_bytes:
             raise LedgerError(

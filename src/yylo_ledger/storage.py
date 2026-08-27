@@ -24,6 +24,8 @@ from .codec import MarkdownTaskCodec, TaskFormatError, normalized_bytes, plain_v
 from .config import Config
 from .ledger import LedgerError, TaskLedger
 from .models import Task
+from .records import (RecordError, RevisionProvenance, exact_replace,
+                      task_record_projection, validate_record)
 from .validators import TaskValidator
 
 
@@ -248,6 +250,34 @@ class TaskStorage:
     def find_task_file(self, task_id: str, file_pattern: Optional[str] = None) -> Optional[str]:
         path = self.task_path(task_id)
         return str(path) if path.exists() else None
+
+    def resolve_record_id(self, id_or_slug: str) -> str:
+        """Resolve one ID/slug/retained alias to exactly one immutable ID."""
+        if not isinstance(id_or_slug, str) or not id_or_slug:
+            raise RecordError("RECORD_NOT_FOUND", "record identity is empty")
+        valid, _ = TaskValidator.validate_id(id_or_slug)
+        if valid and self.find_task_exact(id_or_slug) is not None:
+            return id_or_slug
+        matches = []
+        for task in self.read_all_tasks_complete():
+            record = task_record_projection(task)
+            if id_or_slug == record["slug"] or id_or_slug in record["aliases"]:
+                matches.append(record["id"])
+        matches = sorted(set(matches))
+        if not matches:
+            raise RecordError("RECORD_NOT_FOUND", f"no Record matches {id_or_slug!r}")
+        if len(matches) != 1:
+            raise RecordError("RECORD_IDENTITY_AMBIGUOUS", f"identity matches {len(matches)} Records")
+        return matches[0]
+
+    def get_record(self, id_or_slug: str) -> Dict[str, Any]:
+        record_id = self.resolve_record_id(id_or_slug)
+        task = self.find_task_exact(record_id)
+        if task is None:
+            raise RecordError("RECORD_NOT_FOUND", f"Record {record_id!r} disappeared")
+        record = task_record_projection(task)
+        validate_record(record)
+        return record
 
     @staticmethod
     def normalized_hash(record: Mapping[str, Any]) -> str:
@@ -807,6 +837,87 @@ class TaskStorage:
                                       event["event_id"], event["changed_paths"], str(path), transaction)
             self.last_receipt = receipt
             return receipt
+
+    def exact_replace_record(self, id_or_slug: str, *, path: str, expected: Any,
+                             replacement: Any, expected_revision: int,
+                             mode: str = "structured", expected_digest: Optional[str] = None,
+                             provenance: Optional[RevisionProvenance] = None) -> MutationReceipt:
+        """Resolve to ID, lock/re-read, and atomically replace one exact preimage."""
+        self._assert_not_frozen()
+        with self._board_lock():
+            record_id = self.resolve_record_id(id_or_slug)
+            with self._lock(record_id):
+                task_path = self.task_path(record_id)
+                if not task_path.exists():
+                    self._raise_if_archived(record_id)
+                    raise RecordError("RECORD_NOT_FOUND", f"hot Record {record_id!r} not found")
+                current = self._read_path(task_path)
+                before_plain = plain_value(current)
+                before_hash = self.normalized_hash(current)
+                projected = task_record_projection(before_plain)
+                if projected["revision"] != expected_revision:
+                    raise RecordError(
+                        "REVISION_CONFLICT",
+                        f"expected revision {expected_revision}, current {projected['revision']}")
+                if expected_digest is not None and mode != "payload" and before_hash != expected_digest:
+                    raise RecordError("REVISION_CONFLICT", "Record digest is stale")
+
+                match = exact_replace(projected, path=path, expected=expected,
+                                      replacement=replacement, mode=mode,
+                                      expected_digest=expected_digest if mode == "payload" else None)
+                if projected["id"] != record_id or projected["kind"] != "task":
+                    raise RecordError("IMMUTABLE_FIELD", "id and kind are immutable")
+                if path == "/slug" and replacement != expected:
+                    aliases = list(projected.get("aliases") or [])
+                    if expected not in aliases:
+                        aliases.append(expected)
+                    projected["aliases"] = aliases
+                projected["revision"] = expected_revision + 1
+                projected["last_modified"] = Task._get_timestamp()
+                validate_record(projected)
+
+                # Slug uniqueness is namespace+kind scoped.  The board lock
+                # serializes this global check with every canonical mutation.
+                identities = {projected["slug"], *projected.get("aliases", [])}
+                for other in self.read_all_tasks_canonical():
+                    if other["id"] == record_id:
+                        continue
+                    candidate = task_record_projection(other)
+                    candidate_scope = (candidate["kind"], candidate["namespace"])
+                    projected_scope = (projected["kind"], projected["namespace"])
+                    if candidate_scope != projected_scope:
+                        continue
+                    if identities.intersection({candidate["slug"], *candidate.get("aliases", [])}):
+                        raise RecordError("SLUG_CONFLICT", "slug or alias is already retained")
+
+                # Keep the Task codec at schema v1 while persisting the native
+                # envelope under explicit fields.  Legacy fields remain byte- and
+                # API-compatible and unknown extensions remain lossless.
+                persisted = dict(before_plain)
+                for key in ("slug", "aliases", "profile", "title", "namespace", "tier",
+                            "media_type", "payload", "revision", "relations",
+                            "system_metadata", "custom_metadata", "body", "status",
+                            "agent_response", "feature_tags", "related_tasks", "blocked_by"):
+                    if key in projected:
+                        persisted[key] = projected[key]
+                persisted["record_schema_version"] = 2
+                persisted["last_modified"] = projected["last_modified"]
+                Task.from_dict(persisted, validate=True, config=self.config.to_dict())
+                after_hash = self.normalized_hash(persisted)
+                actor = provenance or RevisionProvenance(actor_type="human")
+                event = self.ledger.prepare(
+                    record_id, "exact-replace", "record", before_hash, after_hash,
+                    before_plain, persisted, False, provenance=actor.to_dict(),
+                    exact_match=match, revision=projected["revision"])
+                transaction = self._apply_transaction(
+                    task_id=record_id, operation="exact-replace", task_path=task_path,
+                    task_bytes=self.codec.dumps(persisted).encode("utf-8"), event=event)
+                self._refresh_cache(persisted, task_path)
+                receipt = MutationReceipt(record_id, "exact-replace", before_hash, after_hash,
+                                          event["event_id"], event["changed_paths"],
+                                          str(task_path), transaction)
+                self.last_receipt = receipt
+                return receipt
 
     def replace_task_record(self, record: Mapping[str, Any], operation: str = "update") -> MutationReceipt:
         """Losslessly replace one record for merge/import tooling under its task lock."""

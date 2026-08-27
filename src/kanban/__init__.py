@@ -18,8 +18,8 @@ warnings.warn(
 _CANONICAL = importlib.import_module("yylo_ledger")
 _MODULES = (
     "archive", "benchmark_git_native", "cache", "codec", "config",
-    "graph", "ledger", "merge", "models", "project_registry", "search",
-    "storage", "validators",
+    "graph", "ledger", "merge", "models", "project_registry", "records",
+    "search", "storage", "validators",
 )
 for _name in _MODULES:
     _module = importlib.import_module(f"yylo_ledger.{_name}")
