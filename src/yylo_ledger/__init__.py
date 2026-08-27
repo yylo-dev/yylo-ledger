@@ -24,6 +24,10 @@ __author__ = "JUNO AI INC."
 
 # Export main classes for easy importing
 from .models import Task
+from .records import (
+    Record, RecordError, Relation, RevisionProvenance, exact_replace,
+    task_record_projection,
+)
 from .config import Config
 from .validators import TaskValidator, ValidationError
 
@@ -50,6 +54,12 @@ except ImportError:
 
 __all__ = [
     "Task",
+    "Record",
+    "RecordError",
+    "Relation",
+    "RevisionProvenance",
+    "exact_replace",
+    "task_record_projection",
     "Config",
     "TaskValidator",
     "ValidationError",
