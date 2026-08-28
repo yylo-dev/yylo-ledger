@@ -30,6 +30,7 @@ from .project_registry import (
 )
 from .archive import (DEFAULT_HARD_MAX_BYTES, DEFAULT_MAX_RECORDS,
                       DEFAULT_TARGET_BYTES, archive_doctor, create_archive, plan_archive)
+from .record_cli import RecordCLI, TYPED_GROUPS, add_record_parsers
 from . import __version__
 
 
@@ -275,6 +276,10 @@ class TaskCLI:
         project_remove = project_subparsers.add_parser('remove', help='Remove one registered project')
         project_remove.add_argument('alias')
         project_subparsers.add_parser('status', help='Show registry enablement without exposing disabled paths')
+
+        # Native Record v2 groups. Flat commands below remain the explicit
+        # legacy task compatibility surface; they are not silently reinterpreted.
+        add_record_parsers(subparsers)
 
         # CREATE command
         create_parser = subparsers.add_parser(
@@ -2666,6 +2671,7 @@ class TaskCLI:
             command_options: Set[str] = set()
             option_values: Dict[str, List[str]] = {}
             positional_args: List[str] = []
+            nested_actions: Dict[str, Dict[str, Any]] = {}
 
             for action in command_parser._actions:
                 if isinstance(action, argparse._HelpAction):
@@ -2689,6 +2695,21 @@ class TaskCLI:
 
                     if action.choices:
                         option_values[action.dest] = [str(choice) for choice in action.choices]
+                    if isinstance(action, argparse._SubParsersAction):
+                        for nested_name, nested_parser in action.choices.items():
+                            nested_options: Set[str] = set()
+                            nested_values: Dict[str, List[str]] = {}
+                            for nested_action in nested_parser._actions:
+                                if nested_action.option_strings:
+                                    nested_options.update(nested_action.option_strings)
+                                    if nested_action.choices:
+                                        values = [str(choice) for choice in nested_action.choices]
+                                        for option in nested_action.option_strings:
+                                            nested_values[option] = values
+                            nested_actions[nested_name] = {
+                                'options': sorted(nested_options),
+                                'option_values': nested_values,
+                            }
 
             if command_name == 'mark':
                 option_values['status'] = self._get_completion_status_values()
@@ -2699,6 +2720,7 @@ class TaskCLI:
                 'options': sorted(command_options),
                 'option_values': option_values,
                 'positionals': positional_args,
+                'nested_actions': nested_actions,
             }
 
         return command_names, sorted(global_options), metadata
@@ -2769,6 +2791,14 @@ class TaskCLI:
                 return self._filter_completion_candidates(option_value_candidates, current)
 
         command_tokens_before_cursor = words[(selected_command_index + 1):safe_index] if selected_command_index is not None else []
+        nested_meta = command_meta.get('nested_actions', {}).get(
+            command_tokens_before_cursor[0] if command_tokens_before_cursor else '')
+        if nested_meta:
+            if previous_token in nested_meta.get('option_values', {}):
+                return self._filter_completion_candidates(
+                    nested_meta['option_values'][previous_token], current)
+            return self._filter_completion_candidates(
+                nested_meta.get('options', []) + global_options, current)
         positional_index = len([token for token in command_tokens_before_cursor if token and not token.startswith('-')])
 
         if selected_command == 'mark' and positional_index == 0 and not current.startswith('-'):
@@ -3003,6 +3033,9 @@ end
 
         # Command signatures — show exact syntax, required vs optional
         print("COMMANDS:")
+        print(f"  {cn} record|task|wiki|workflow|artifact ACTION ...      Native ID-first Record API v2 (no remove)")
+        print(f"      ACTION: create|list|search|get|update|history|archive (where profile permits)")
+        print(f"      Flat task commands below are the versioned legacy v1 compatibility surface")
         print(f"  {cn} --project ALIAS COMMAND ...                       Route through an allowed destination wrapper")
         print(f"  {cn} project add ALIAS --path PATH [--replace]          Register an initialized project")
         print(f"  {cn} project list|show|remove|status                    Manage the opt-in user registry")
@@ -3187,11 +3220,14 @@ end
             # This supports: echo "task" | yylo-ledger or yylo-ledger << 'EOF'.
             # Do not pre-read stdin when explicit file-input flags use '-' because
             # create/update/mark must read exact content themselves (without strip()).
-            file_flag_reads_stdin = any(
-                arg in ('--body-file=-', '--response-file=-')
+            stdin_file_flags = ('--body-file', '--response-file', '--file',
+                                '--expect-file', '--value-file', '--old-file',
+                                '--new-file', '--front-matter-file')
+            file_flag_reads_stdin = '--stdin' in args_to_parse or any(
+                any(arg == f'{flag}=-' for flag in stdin_file_flags)
                 for arg in args_to_parse
             ) or any(
-                arg in ('--body-file', '--response-file') and idx + 1 < len(args_to_parse) and args_to_parse[idx + 1] == '-'
+                arg in stdin_file_flags and idx + 1 < len(args_to_parse) and args_to_parse[idx + 1] == '-'
                 for idx, arg in enumerate(args_to_parse)
             )
             registry_management = 'project' in args_to_parse
@@ -3220,7 +3256,7 @@ end
                         # Insert right after 'create' command (position 1), before any flags
                         args_to_parse = ['create', stdin_body] + args_to_parse[1:]
                         body_from_implicit_stdin = True
-                elif first_arg.startswith('-') or first_arg not in ['project', 'create', 'search', 'get', 'show', 'update', 'list', 'archive', 'archive-pack', 'archive-search', 'mark', 'umbrella-finalize', 'merge', 'deps', 'ready', 'order', 'tags', 'completion', '__complete']:
+                elif first_arg.startswith('-') or first_arg not in ['record', *TYPED_GROUPS, 'project', 'create', 'search', 'get', 'show', 'update', 'list', 'archive', 'archive-pack', 'archive-search', 'mark', 'umbrella-finalize', 'merge', 'deps', 'ready', 'order', 'tags', 'completion', '__complete']:
                     # No command specified or shortcut syntax with flags
                     # Treat stdin as task body for create
                     if first_arg.startswith('-'):
@@ -3242,7 +3278,7 @@ end
 
             if args_to_parse and len(args_to_parse) > 0 and not args_to_parse[0].startswith('-'):
                 # Check if first argument is not a known command
-                known_commands = ['project', 'create', 'search', 'get', 'show', 'update', 'list', 'archive', 'archive-pack', 'archive-search', 'mark', 'umbrella-finalize', 'merge', 'deps', 'ready', 'order', 'tags', 'history', 'reconcile', 'doctor', 'cache', 'convert', 'compatibility', 'export-legacy', 'rollback', 'completion', '__complete']
+                known_commands = ['record', *TYPED_GROUPS, 'project', 'create', 'search', 'get', 'show', 'update', 'list', 'archive', 'archive-pack', 'archive-search', 'mark', 'umbrella-finalize', 'merge', 'deps', 'ready', 'order', 'tags', 'history', 'reconcile', 'doctor', 'cache', 'convert', 'compatibility', 'export-legacy', 'rollback', 'completion', '__complete']
                 if args_to_parse[0] not in known_commands:
                     # Treat as shortcut: yylo-ledger "task body" -> yylo-ledger create "task body"
                     args_to_parse = ['create'] + args_to_parse
@@ -3280,6 +3316,9 @@ end
             if not parsed_args.command:
                 # No command specified - show help
                 return self.show_help(parsed_args)
+
+            elif parsed_args.command == 'record' or parsed_args.command in TYPED_GROUPS:
+                return RecordCLI(self).run(parsed_args)
 
             elif parsed_args.command == 'create':
                 return self.cmd_create(parsed_args)

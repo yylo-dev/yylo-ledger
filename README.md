@@ -145,6 +145,40 @@ pip install -e .
 - Runtime dependency `ruamel.yaml>=0.18.6,<0.19` is installed automatically
   for safe round-trip YAML that preserves comments and ordering
 
+## Native Record CLI (v2)
+
+The ID-first `record`, `task`, `wiki`, `workflow`, and `artifact` groups expose
+`create`, `list`, `search`, `get`, `update`, `history`, and `archive` where the
+profile permits mutation. There is intentionally no Record `remove` command.
+Flat task commands remain the explicit legacy v1 compatibility surface. They
+retain existing semantics for the full 0.x line, emit no per-command deprecation
+warning, and may change only at a documented major-version boundary.
+
+```bash
+yylo-ledger wiki create --title Guide --file guide.md
+yylo-ledger wiki get RECORD_ID --raw
+yylo-ledger wiki get RECORD_ID --front-matter
+yylo-ledger workflow create --title Build --file workflow.yaml
+yylo-ledger workflow get RECORD_ID --validated
+yylo-ledger artifact create --title Report --profile report --mode local --file report.bin
+yylo-ledger record search --scope all --profile wiki --limit 20 -f json
+```
+
+Slug and retained-alias inputs resolve once; structured results report the
+immutable `id`, current `slug`, and `resolved_from` for non-ID input. Updates
+are compare-and-replace operations: provide `--expected-revision` and exact
+`--old-file/--new-file`, or `--path --expect-file --value-file`. Wiki
+front-matter import additionally requires the SHA-256 `--expected-preimage` of
+the complete prior export. Rich Markdown, YAML, and binary artifacts use file
+or `-`/`--stdin` transport rather than inline shell arguments.
+
+Record search is bounded to 100 records and 1 MiB of rendered JSON by default;
+`--max-output-bytes` can only lower the per-command budget. Use explicit
+`--scope hot|archive|all`, stable cursors, and `metadata|summary|full`
+projections. Summary search omits body/payload bytes, sensitive Records expose
+only safe identity metadata, and credential/email-like values are redacted
+before JSON, NDJSON, XML, or table rendering.
+
 ## Shell Completion (Tab Autocomplete)
 
 `yylo-ledger` ships a native completion script generator for every command alias:
