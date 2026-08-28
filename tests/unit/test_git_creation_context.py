@@ -7,6 +7,7 @@ from copy import deepcopy
 
 import pytest
 
+from yylo_ledger.artifacts import ArtifactStore
 from yylo_ledger.config import Config
 from yylo_ledger.documents import DocumentStore, create_document
 from yylo_ledger.git_creation import capture_creation_context
@@ -75,6 +76,37 @@ def test_distinct_repositories_preserve_role_ids_and_document_context_is_immutab
         create_document(record_id="Xy9Za8", title="Spoof", profile="wiki",
                         media_type="text/markdown", text="x",
                         system_metadata={"creation_context": before})
+
+
+def test_artifact_creation_context_survives_revisions_and_archive(tmp_path):
+    root = repository(tmp_path / "artifacts")
+    store = ArtifactStore(root / ".juno_task")
+    created = store.create(record_id="Ar1Ctx", title="Evidence", profile="report",
+                           mode="inline", content=b"one",
+                           required_git_roles=("controller",))
+    creation_context = deepcopy(created["system_metadata"]["creation_context"])
+
+    second = store.revise("Ar1Ctx", expected_revision=1,
+                          expected_payload=created["payload"], mode="inline", content=b"two")
+    assert second["system_metadata"]["creation_context"] == creation_context
+    with pytest.raises(TypeError, match="unsupported revision arguments"):
+        store.revise("Ar1Ctx", expected_revision=2, expected_payload=second["payload"],
+                     mode="inline", content=b"spoofed",
+                     system_metadata={"creation_context": {}})
+    assert store.get("Ar1Ctx")["revision"] == 2
+
+    third = store.revise("Ar1Ctx", expected_revision=2,
+                         expected_payload=second["payload"], mode="inline", content=b"three")
+    assert third["system_metadata"]["creation_context"] == creation_context
+    store.archive_record("Ar1Ctx", expected_revision=3)
+
+    cold = store.get("Ar1Ctx")
+    assert cold["system_metadata"]["creation_context"] == creation_context
+    snapshots = [item["record"] for item in store.archive_history("Ar1Ctx")
+                 if item["operation"] == "snapshot"]
+    assert [item["system_metadata"]["creation_context"] for item in snapshots] == [
+        creation_context, creation_context, creation_context]
+    assert store.doctor() == []
 
 
 def test_non_git_unborn_and_strict_refusal_leave_no_record_or_history(tmp_path):
