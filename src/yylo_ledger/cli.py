@@ -398,13 +398,11 @@ class TaskCLI:
         archive_parser = subparsers.add_parser(
             'archive',
             help='Archive a task',
-            description='Move one exact Record revision to verified immutable cold storage'
+            description='Archive a task by setting its status to archive'
         )
         archive_parser.add_argument('id', nargs='?', help='Task ID to archive (positional)')
         archive_parser.add_argument('-ID', '--id', dest='id_flag', help='Task ID via flag (--ID or --id)')
-        archive_parser.add_argument('--expected-revision', type=int,
-                                    help='Archive only this exact Record revision')
-        archive_parser.add_argument('--receipt-file', help='Write the complete structured archive receipt to PATH, or - for stderr')
+        archive_parser.add_argument('--receipt-file', help='Write the complete structured mutation receipt to PATH, or - for stderr')
 
         archive_pack_parser = subparsers.add_parser(
             'archive-pack', help='Plan or manage immutable cold archive packs',
@@ -2166,19 +2164,24 @@ class TaskCLI:
                 print("Error: Task ID is required. Use 'archive TASK_ID' or 'archive --ID TASK_ID'", file=sys.stderr)
                 return ExitCode.INVALID_USAGE
             args.id = task_id
-            record = self.storage.get_record(args.id)
-            expected = (args.expected_revision if args.expected_revision is not None
-                        else record["revision"])
-            destination = None if args.receipt_file in (None, '-') else Path(args.receipt_file)
-            receipt = self.storage.archive_record(
-                args.id, expected_revision=expected, receipt_path=destination,
-                provenance={"actor_type": "human", "actor": "cli"})
-            if args.receipt_file == '-':
-                print(json.dumps(receipt, ensure_ascii=False, sort_keys=True), file=sys.stderr)
-            print(f"Record {receipt['record_id']} archived to verified cold storage")
-            if args.verbose:
-                print(f"Archive receipt: {receipt['receipt_path']}", file=sys.stderr)
-            return ExitCode.SUCCESS
+            # Exact lookup distinguishes immutable archived IDs from missing IDs.
+            task = self.storage.find_task_exact(args.id)
+            if not task:
+                print(f"Error: Task {args.id} not found", file=sys.stderr)
+                return ExitCode.VALIDATION_ERROR
+
+            # The legacy task command remains a status mutation. Immediate verified
+            # cold archival is exposed by the typed `record task archive` command.
+            updated = self.storage.update_task(args.id, {'status': 'archive'}, operation='archive')
+            if updated:
+                self._emit_mutation_receipt(args, updated)
+                print(f"Task {args.id} archived successfully")
+                if args.verbose:
+                    print(f"Task {args.id} status set to archive", file=sys.stderr)
+                return ExitCode.SUCCESS
+
+            print(f"Error: Failed to archive task {args.id}", file=sys.stderr)
+            return ExitCode.GENERAL_ERROR
 
         except Exception as e:
             print(f"Error archiving task: {e}", file=sys.stderr)
