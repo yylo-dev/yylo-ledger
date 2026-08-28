@@ -2,8 +2,16 @@
 from __future__ import annotations
 
 import copy
+import fcntl
+import hashlib
+import json
+import os
 import re
+import subprocess
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from .profiles import ProfileRegistry, default_profile_registry
@@ -169,3 +177,187 @@ def exact_update_document(record: Mapping[str, Any], *, path: str, expected: Any
              "payload_sha256": candidate["payload"]["sha256"],
              "provenance": actor.to_dict()}
     return candidate, event
+
+
+class DocumentStore:
+    """Canonical immutable revision files for wiki/workflow Records."""
+
+    def __init__(self, juno_root: Path, *, registry: Optional[ProfileRegistry] = None):
+        self.root = Path(juno_root)
+        self.juno_root = self.root
+        self.registry = registry or default_profile_registry()
+        self.records_root = self.root / "documents"
+        self.events_root = self.root / "document-ledger"
+
+    def _directory(self, record_id: str) -> Path:
+        return self.records_root / record_id[:2].lower() / record_id
+
+    def _event_directory(self, record_id: str) -> Path:
+        return self.events_root / record_id[:2].lower() / record_id
+
+    @staticmethod
+    def _atomic_create(path: Path, value: Mapping[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                             separators=(",", ":")).encode() + b"\n"
+        fd, temporary = tempfile.mkstemp(prefix=".%s." % path.name, dir=path.parent)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(encoded); handle.flush(); os.fsync(handle.fileno())
+            os.link(temporary, path)
+        except FileExistsError as exc:
+            raise RecordError("REVISION_CONFLICT", "immutable Document revision already exists") from exc
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+
+    def _cold_envelope(self, record_id: str) -> Optional[Dict[str, Any]]:
+        from .archive import ArchiveFormatError, iter_archive_envelopes
+        matches = [item for item in iter_archive_envelopes(self.root)
+                   if item["task"]["id"].casefold() == record_id.casefold()
+                   and item["task"].get("kind") == "document"]
+        if len(matches) > 1:
+            raise ArchiveFormatError("duplicate cold Document ID")
+        return matches[0] if matches else None
+
+    def create(self, **kwargs: Any) -> Dict[str, Any]:
+        record = create_document(registry=self.registry, **kwargs)
+        record_id = record["id"]
+        with self._lock(record_id):
+            if self._directory(record_id).exists() or self._cold_envelope(record_id):
+                raise RecordError("DOCUMENT_ID_CONFLICT", "Document ID already exists")
+            event = {"operation": "create", "record_id": record_id, "revision": 1,
+                     "record_sha256": value_digest(record), "timestamp": record["created_date"]}
+            revision = self._directory(record_id) / "00000001.json"
+            history = self._event_directory(record_id) / "00000001.json"
+            try:
+                self._atomic_create(revision, record)
+                self._atomic_create(history, event)
+            except BaseException:
+                revision.unlink(missing_ok=True); history.unlink(missing_ok=True)
+                raise
+        return record
+
+    def get(self, id_or_slug: str, revision: Optional[int] = None) -> Dict[str, Any]:
+        record_id = self.resolve(id_or_slug)
+        paths = sorted(self._directory(record_id).glob("*.json"))
+        if paths:
+            path = paths[-1] if revision is None else self._directory(record_id) / f"{revision:08d}.json"
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError as exc:
+                raise RecordError("RECORD_NOT_FOUND", "Document revision does not exist") from exc
+        else:
+            envelope = self._cold_envelope(record_id)
+            if envelope is None or revision is not None:
+                raise RecordError("RECORD_NOT_FOUND", "Document does not exist")
+            value = envelope["task"]
+        validate_document(value, registry=self.registry)
+        return value
+
+    def resolve(self, id_or_slug: str) -> str:
+        matches = []
+        for directory in self.records_root.glob("*/*"):
+            paths = sorted(directory.glob("*.json"))
+            if paths:
+                value = json.loads(paths[-1].read_text(encoding="utf-8"))
+                if id_or_slug in [value["id"], value["slug"], *value["aliases"]]:
+                    matches.append(value["id"])
+        from .archive import iter_archive_envelopes
+        for envelope in iter_archive_envelopes(self.root):
+            value = envelope["task"]
+            if value.get("kind") == "document" and id_or_slug in [value["id"], value["slug"], *value.get("aliases", [])]:
+                matches.append(value["id"])
+        matches = sorted(set(matches))
+        if not matches:
+            raise RecordError("RECORD_NOT_FOUND", "Document identity does not exist")
+        if len(matches) != 1:
+            raise RecordError("RECORD_IDENTITY_AMBIGUOUS", "Document identity is ambiguous")
+        return matches[0]
+
+    @contextmanager
+    def _lock(self, record_id: str):
+        path = self.root / "locks" / "documents" / (record_id.casefold() + ".lock")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a+b") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def update(self, id_or_slug: str, **kwargs: Any) -> Dict[str, Any]:
+        record_id = self.resolve(id_or_slug)
+        with self._lock(record_id):
+            current = self.get(record_id)
+            if current["tier"] == "cold":
+                raise RecordError("RECORD_ARCHIVED", "archived Documents are immutable")
+            candidate, event = exact_update_document(current, registry=self.registry, **kwargs)
+            revision = self._directory(record_id) / f"{candidate['revision']:08d}.json"
+            history = self._event_directory(record_id) / f"{candidate['revision']:08d}.json"
+            try:
+                self._atomic_create(revision, candidate)
+                self._atomic_create(history, event)
+            except BaseException:
+                revision.unlink(missing_ok=True); history.unlink(missing_ok=True)
+                raise
+            return candidate
+
+    @contextmanager
+    def _record_archive_lock(self, id_or_slug: str):
+        from .archive import _record_archive_owner
+        record_id = self.resolve(id_or_slug)
+        with _record_archive_owner(self.root), self._lock(record_id):
+            if self.resolve(id_or_slug) != record_id:
+                raise RecordError("RECORD_IDENTITY_AMBIGUOUS", "Document identity changed while locking")
+            if self._cold_envelope(record_id):
+                raise RecordError("RECORD_ARCHIVED", "archived Documents are immutable")
+            yield record_id
+
+    def _record_archive_snapshot(self, record_id: str) -> Dict[str, Any]:
+        revisions = sorted(self._directory(record_id).glob("*.json"))
+        events = sorted(self._event_directory(record_id).glob("*.json"))
+        if not revisions or len(revisions) != len(events):
+            from .archive import ArchiveFormatError
+            raise ArchiveFormatError("Document snapshot/history is incomplete")
+        snapshots = [json.loads(path.read_text(encoding="utf-8")) for path in revisions]
+        event_values = [json.loads(path.read_text(encoding="utf-8")) for path in events]
+        history = []
+        for item, event in zip(snapshots, event_values):
+            history.extend(({"operation": "snapshot", "record_id": record_id,
+                             "revision": item["revision"], "record": item}, event))
+        return {"record": snapshots[-1], "history": history,
+                "paths": [*revisions, *events], "owned_objects": []}
+
+    def _record_archive_verify_objects(self, objects) -> None:
+        if objects:
+            raise RecordError("DOCUMENT_INVALID", "Documents cannot own content objects")
+
+    def _record_archive_refresh(self) -> None:
+        return None
+
+    def _git_head(self) -> Optional[str]:
+        try:
+            return subprocess.check_output(["git", "-C", str(self.root.parent), "rev-parse", "HEAD"],
+                                           text=True, stderr=subprocess.DEVNULL).strip()
+        except (OSError, subprocess.CalledProcessError):
+            return None
+
+    def _config_hash(self) -> str:
+        return hashlib.sha256(b"document-store-v1").hexdigest()
+
+    def archive(self, id_or_slug: str, *, expected_revision: int,
+                receipt_path: Optional[Path] = None,
+                provenance: Optional[Mapping[str, Any]] = None, fault=None) -> Dict[str, Any]:
+        from .archive import archive_record
+        return archive_record(self, id_or_slug, expected_revision=expected_revision,
+                              receipt_path=receipt_path, provenance=provenance, fault=fault)
+
+    def history(self, id_or_slug: str) -> list[Dict[str, Any]]:
+        record_id = self.resolve(id_or_slug)
+        events = sorted(self._event_directory(record_id).glob("*.json"))
+        if events:
+            return [json.loads(path.read_text(encoding="utf-8")) for path in events]
+        envelope = self._cold_envelope(record_id)
+        if envelope is None:
+            raise RecordError("RECORD_NOT_FOUND", "Document history does not exist")
+        return list(envelope["ledger"])

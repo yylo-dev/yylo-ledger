@@ -22,8 +22,10 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 from .codec import normalized_bytes, plain_value
 from .ledger import LedgerError
+from .records import RecordError, validate_record, value_digest
 
 ARCHIVE_SCHEMA = 1
+RECORD_ARCHIVE_SCHEMA = 1
 DEFAULT_TARGET_BYTES = 25 * 1024 * 1024
 DEFAULT_HARD_MAX_BYTES = 45 * 1024 * 1024
 DEFAULT_MAX_RECORDS = 1000
@@ -151,6 +153,65 @@ def make_envelope(task: Mapping[str, Any], ledger: Sequence[Mapping[str, Any]],
     return envelope
 
 
+def make_record_envelope(record: Mapping[str, Any], history: Sequence[Mapping[str, Any]],
+                         archived_at: str, source_revision: str,
+                         *, owned_objects: Sequence[Mapping[str, Any]] = (),
+                         provenance: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """Seal one native Record without changing the legacy Task pack format.
+
+    ``task``/``ledger`` remain the physical compatibility keys so old manifest
+    readers can locate an ID. ``record_archive_schema`` selects the native
+    verifier; existing schema-1 Task envelopes are therefore never rewritten.
+    """
+    value = plain_value(record)
+    events = plain_value(list(history))
+    if not isinstance(value, dict):
+        raise ArchiveFormatError("archive Record must be an object")
+    validate_record(value)
+    if value.get("tier") != "hot" or value.get("lifecycle") == "archived":
+        raise ArchiveFormatError("Record is not mutable hot truth")
+    if not isinstance(events, list) or any(not isinstance(item, Mapping) for item in events):
+        raise ArchiveFormatError("Record history must be a list of objects")
+    archived_at = _utc_text(archived_at, "archived_at")
+    if (not isinstance(source_revision, str) or not source_revision.startswith("sha256:")
+            or not _HEX64.match(source_revision[7:])):
+        raise ArchiveFormatError("source_revision must be a sha256 digest")
+    if source_revision[7:] != value_digest(value):
+        raise ArchiveFormatError("source revision does not match Record snapshot")
+    objects = plain_value(list(owned_objects))
+    for item in objects:
+        path = item.get("path") if isinstance(item, Mapping) else None
+        digest = item.get("sha256") if isinstance(item, Mapping) else None
+        if (not isinstance(path, str) or Path(path).is_absolute() or ".." in Path(path).parts
+                or not isinstance(digest, str) or not _HEX64.match(digest)):
+            raise ArchiveFormatError("Record archive contains an unsafe object reference")
+    archive_event = {
+        "operation": "archive", "record_id": value["id"],
+        "expected_revision": value["revision"], "record_sha256": value_digest(value),
+        "timestamp": archived_at, "provenance": plain_value(dict(provenance or {})),
+    }
+    archive_event["event_sha256"] = _sha(_canonical(archive_event))
+    events.append(archive_event)
+    cold = dict(value)
+    cold["lifecycle"] = "archived"
+    cold["tier"] = "cold"
+    envelope: Dict[str, Any] = {
+        "archive_schema": ARCHIVE_SCHEMA,
+        "record_archive_schema": RECORD_ARCHIVE_SCHEMA,
+        "task": cold,
+        "ledger": events,
+        "archived_at": archived_at,
+        "terminal_transition_at": archived_at,
+        "source_revision": source_revision,
+        "task_sha256": _sha(_canonical(cold)),
+        "ledger_sha256": _sha(_canonical(events)),
+        "owned_objects": objects,
+        "hot_record_sha256": value_digest(value),
+    }
+    envelope["record_sha256"] = _sha(_canonical(envelope))
+    return verify_envelope(envelope)
+
+
 def encode_envelope(envelope: Mapping[str, Any]) -> bytes:
     """Return one canonical NDJSON record, including its sole LF terminator."""
     verify_envelope(envelope)
@@ -187,7 +248,32 @@ def verify_envelope(envelope: Mapping[str, Any]) -> Dict[str, Any]:
     payload = {key: value for key, value in envelope.items() if key != "record_sha256"}
     if not isinstance(supplied, str) or supplied != _sha(_canonical(payload)):
         raise ArchiveFormatError("archive record hash mismatch for %s" % task["id"])
-    _verify_ledger(str(task["id"]), task_hash, ledger)
+    if envelope.get("record_archive_schema") is not None:
+        if envelope.get("record_archive_schema") != RECORD_ARCHIVE_SCHEMA:
+            raise ArchiveFormatError("unsupported native Record archive schema")
+        try:
+            validate_record(task)
+        except RecordError as exc:
+            raise ArchiveFormatError(str(exc)) from exc
+        if task.get("tier") != "cold" or task.get("lifecycle") != "archived":
+            raise ArchiveFormatError("native archived Record is not cold and immutable")
+        source = envelope.get("source_revision")
+        if envelope.get("hot_record_sha256") != source[7:]:
+            raise ArchiveFormatError("native archive source revision mismatch")
+        if not ledger or ledger[-1].get("operation") != "archive" or ledger[-1].get("record_id") != task["id"]:
+            raise ArchiveFormatError("native archive lacks terminal provenance")
+        terminal = dict(ledger[-1])
+        supplied_event_hash = terminal.pop("event_sha256", None)
+        if supplied_event_hash != _sha(_canonical(terminal)):
+            raise ArchiveFormatError("native archive terminal event hash mismatch")
+        for item in envelope.get("owned_objects", []):
+            path = item.get("path") if isinstance(item, Mapping) else None
+            digest = item.get("sha256") if isinstance(item, Mapping) else None
+            if (not isinstance(path, str) or Path(path).is_absolute() or ".." in Path(path).parts
+                    or not isinstance(digest, str) or not _HEX64.match(digest)):
+                raise ArchiveFormatError("native archive contains an unsafe object reference")
+    else:
+        _verify_ledger(str(task["id"]), task_hash, ledger)
     return dict(envelope)
 
 
@@ -557,11 +643,15 @@ def scan_archive_index(juno_root: Path) -> Tuple[List[Dict[str, Any]], str]:
             seen[folded] = task_id
             envelope = read_record(pack, item)
             task = envelope["task"]
-            status = task.get("status")
-            if status not in ("done", "archive"):
-                raise ArchiveFormatError("cold archive task is not terminal: %s" % task_id)
+            native = envelope.get("record_archive_schema") is not None
+            status = task.get("status") if not native else "archive"
+            if (not native and status not in ("done", "archive")) or (native and (
+                    task.get("tier") != "cold" or task.get("lifecycle") != "archived")):
+                raise ArchiveFormatError("cold archive Record is not terminal: %s" % task_id)
             entries.append({
                 "task_id": task_id, "id_fold": folded, "status": status,
+                "kind": task.get("kind", "task"), "slug": task.get("slug"),
+                "aliases": list(task.get("aliases") or []),
                 "terminal_transition_at": envelope["terminal_transition_at"],
                 "last_modified": str(task.get("last_modified", "")),
                 "feature_tags": list(task.get("feature_tags") or []),
@@ -915,6 +1005,19 @@ def _assert_selected_worktrees_clean(root: Path, selected_paths: Sequence[str]) 
 
 
 @contextmanager
+def _record_archive_owner(juno_root: Path):
+    """Serialize immediate Record publication without requiring a Git repository."""
+    lock = Path(juno_root) / "locks" / "record-archive.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with lock.open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
 def _archive_owner(root: Path):
     common = Path(_git(root, "rev-parse", "--path-format=absolute",
                        "--git-common-dir").stdout.strip())
@@ -1218,4 +1321,132 @@ def recover_archive(storage: Any, report_path: Optional[Path] = None) -> Dict[st
         else:
             _write_json_atomic(output, receipt)
         freeze_path.unlink()
+        return receipt
+
+
+def archive_record(storage: Any, id_or_slug: str, *, expected_revision: int,
+                   receipt_path: Optional[Path] = None,
+                   provenance: Optional[Mapping[str, Any]] = None,
+                   creator_version: str = "yylo-ledger",
+                   fault: Optional[Callable[[str], None]] = None) -> Dict[str, Any]:
+    """Move exactly one native Record from hot files to an immutable cold pack.
+
+    The storage adapter owns identity, locking, hot path discovery, and cache
+    refresh. Publication is the authority boundary: failures before it restore
+    exact hot bytes; failures at or after it finish hot removal, leaving exact
+    cold truth. SQLite and receipts are never authority.
+    """
+    emit = fault or (lambda boundary: None)
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    with storage._record_archive_lock(id_or_slug) as record_id:
+        snapshot = storage._record_archive_snapshot(record_id)
+        record = plain_value(snapshot["record"])
+        if record.get("revision") != expected_revision:
+            raise RecordError("REVISION_CONFLICT", "expected archive revision is stale")
+        paths = [Path(item) for item in snapshot["paths"]]
+        root = Path(storage.juno_root).resolve()
+        for path in paths:
+            try:
+                path.resolve().relative_to(root)
+            except ValueError as exc:
+                raise ArchiveFormatError("hot Record path escapes Ledger root") from exc
+            if not path.is_file() or path.is_symlink():
+                raise ArchiveFormatError("hot Record path is missing or unsafe: %s" % path)
+        backups = {path: (path.read_bytes(), path.stat().st_mode) for path in paths}
+        objects = list(snapshot.get("owned_objects") or [])
+        storage._record_archive_verify_objects(objects)
+        envelope = make_record_envelope(
+            record, snapshot.get("history") or [], now,
+            "sha256:" + value_digest(record), owned_objects=objects,
+            provenance=provenance)
+        (root / "locks").mkdir(parents=True, exist_ok=True)
+        stage = Path(tempfile.mkdtemp(prefix="record-archive-", dir=root / "locks"))
+        published: List[Path] = []
+        authority_published = False
+        removed = False
+        try:
+            emit("before_seal")
+            artifacts = write_archive_packs(stage, [envelope],
+                                            source_head=storage._git_head() or "outside-git",
+                                            config_sha256=storage._config_hash(),
+                                            creator_version=creator_version,
+                                            created_at=now, max_records=1)
+            if len(artifacts) != 1:
+                raise ArchiveFormatError("single-Record archive did not create one pack")
+            artifact = artifacts[0]
+            receipt: Dict[str, Any] = {
+                "record_archive_receipt_schema": 1, "record_id": record_id,
+                "kind": record["kind"], "slug": record["slug"],
+                "expected_revision": expected_revision, "archived_at": now,
+                "source_revision": envelope["source_revision"],
+                "record_sha256": envelope["record_sha256"],
+                "pack_sha256": artifact.pack_sha256,
+                "owned_objects": objects,
+            }
+            receipt["receipt_sha256"] = _receipt_hash(receipt)
+            canonical_receipt = root / "archive-receipts" / record_id[:2].lower() / (record_id + ".json")
+            requested_receipt = Path(receipt_path).resolve() if receipt_path is not None else canonical_receipt
+            if canonical_receipt.exists() or (requested_receipt != canonical_receipt and requested_receipt.exists()):
+                raise ArchiveFormatError("immutable archive receipt already exists")
+            emit("after_seal")
+            destination = root / "archive" / artifact.pack.relative_to(stage).parent
+            copies = [(source, destination / source.name) for source in
+                      (artifact.pack, artifact.manifest, artifact.checksum)]
+            if any(target.exists() for _, target in copies):
+                raise ArchiveFormatError("immutable Record archive destination already exists")
+            destination.mkdir(parents=True, exist_ok=True)
+            for source, target in copies:
+                shutil.copyfile(source, target)
+                target.chmod(0o444)
+                published.append(target)
+            verify_archive_artifact(published[0], published[1], published[2])
+            # The canonical receipt is published at the same authority boundary;
+            # an optional caller path is an additional immutable projection.
+            _write_json_atomic(canonical_receipt, receipt)
+            canonical_receipt.chmod(0o444)
+            if requested_receipt != canonical_receipt:
+                _write_json_atomic(requested_receipt, receipt)
+                requested_receipt.chmod(0o444)
+            authority_published = True
+            emit("after_manifest_publication")
+            for path in paths:
+                path.unlink()
+            removed = True
+            emit("after_hot_removal")
+            storage._record_archive_refresh()
+            emit("after_cache_refresh")
+        except BaseException:
+            if authority_published:
+                # A verified manifest is canonical cold authority. Complete the
+                # destructive half rather than exposing duplicate hot/cold IDs.
+                for path in paths:
+                    path.unlink(missing_ok=True)
+                removed = True
+                try:
+                    storage._record_archive_refresh()
+                except Exception:
+                    pass
+            else:
+                for path in reversed(published):
+                    try:
+                        path.chmod(0o644)
+                        path.unlink()
+                    except FileNotFoundError:
+                        pass
+                if "canonical_receipt" in locals():
+                    canonical_receipt.unlink(missing_ok=True)
+                if ("requested_receipt" in locals() and "canonical_receipt" in locals()
+                        and requested_receipt != canonical_receipt):
+                    requested_receipt.unlink(missing_ok=True)
+                for path, (raw, mode) in backups.items():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(raw)
+                    path.chmod(mode)
+            raise
+        finally:
+            shutil.rmtree(stage, ignore_errors=True)
+        if not removed:
+            raise ArchiveFormatError("Record archive did not cross an authority boundary")
+        receipt["receipt_path"] = str(requested_receipt)
+        receipt["canonical_receipt_path"] = str(canonical_receipt)
         return receipt

@@ -31,7 +31,7 @@ from .records import (
 from .artifacts import ArtifactPolicy, ArtifactStore, validate_retention
 from .content_objects import ContentObjectStore
 from .documents import (
-    create_document, exact_update_document, extract_record_links,
+    DocumentStore, create_document, exact_update_document, extract_record_links,
     validate_document, validate_record_links,
 )
 from .frontmatter import emit_wiki_frontmatter, import_wiki_frontmatter, parse_wiki_frontmatter
@@ -82,6 +82,7 @@ __all__ = [
     "WORKFLOW_PROFILE",
     "WORKFLOW_SCHEMA_V1",
     "default_profile_registry",
+    "DocumentStore",
     "create_document",
     "validate_document",
     "exact_update_document",

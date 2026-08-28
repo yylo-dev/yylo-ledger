@@ -260,7 +260,8 @@ class TaskStorage:
             return id_or_slug
         matches = []
         for task in self.read_all_tasks_complete():
-            record = task_record_projection(task)
+            record = (dict(task) if task.get("kind") in ("document", "artifact")
+                      else task_record_projection(task))
             if id_or_slug == record["slug"] or id_or_slug in record["aliases"]:
                 matches.append(record["id"])
         matches = sorted(set(matches))
@@ -275,7 +276,8 @@ class TaskStorage:
         task = self.find_task_exact(record_id)
         if task is None:
             raise RecordError("RECORD_NOT_FOUND", f"Record {record_id!r} disappeared")
-        record = task_record_projection(task)
+        record = (dict(task) if task.get("kind") in ("document", "artifact")
+                  else task_record_projection(task))
         validate_record(record)
         return record
 
@@ -1112,6 +1114,50 @@ class TaskStorage:
                 pass
             return True
 
+    @contextmanager
+    def _record_archive_lock(self, id_or_slug: str):
+        """Resolve, globally serialize publication, then re-read under ID lock."""
+        from .archive import _record_archive_owner
+        record_id = self.resolve_record_id(id_or_slug)
+        with _record_archive_owner(self.juno_root), self._lock(record_id):
+            if self.resolve_record_id(id_or_slug) != record_id:
+                raise RecordError("RECORD_IDENTITY_AMBIGUOUS", "Record identity changed while locking")
+            resolved = self.resolve_task(record_id)
+            if resolved is None:
+                raise RecordError("RECORD_NOT_FOUND", "Record disappeared while locking")
+            if resolved[0] == "cold":
+                raise ArchivedTaskError(record_id)
+            yield record_id
+
+    def _record_archive_snapshot(self, record_id: str) -> Dict[str, Any]:
+        task = self.find_task(record_id)
+        if task is None:
+            self._raise_if_archived(record_id)
+            raise RecordError("RECORD_NOT_FOUND", "hot Record does not exist")
+        segments = self.ledger.segments(record_id)
+        if not segments:
+            from .archive import ArchiveFormatError
+            raise ArchiveFormatError("hot Record history is missing")
+        return {"record": task_record_projection(task), "history": self.ledger.read(record_id),
+                "paths": [self.task_path(record_id), *segments], "owned_objects": []}
+
+    def _record_archive_verify_objects(self, objects: List[Mapping[str, Any]]) -> None:
+        if objects:
+            from .archive import ArchiveFormatError
+            raise ArchiveFormatError("Task Record cannot own content objects")
+
+    def _record_archive_refresh(self) -> None:
+        self._archive_id_inventory = None
+        self.rebuild_cache()
+
+    def archive_record(self, id_or_slug: str, *, expected_revision: int,
+                       receipt_path: Optional[Path] = None,
+                       provenance: Optional[Mapping[str, Any]] = None,
+                       fault=None) -> Dict[str, Any]:
+        from .archive import archive_record
+        return archive_record(self, id_or_slug, expected_revision=expected_revision,
+                              receipt_path=receipt_path, provenance=provenance, fault=fault)
+
     def _raise_if_archived(self, task_id: str):
         entry = self._archive_entry_after_canonical_miss_check(task_id)
         if entry and entry["task_id"] == task_id:
@@ -1131,7 +1177,8 @@ class TaskStorage:
         for event in events:
             summarized.append({key: event.get(key) for key in (
                 "event_id", "task_id", "timestamp", "operation", "source", "before_sha256",
-                "after_sha256", "previous_event_sha256", "event_sha256", "changed_paths")})
+                "after_sha256", "previous_event_sha256", "event_sha256", "changed_paths",
+                "record_id", "expected_revision", "provenance")})
         return summarized
 
     def reconcile(self, check: bool = False):

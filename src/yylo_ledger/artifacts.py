@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import base64
 import fcntl
+import hashlib
 import json
 import os
 import re
 import tempfile
+import subprocess
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -124,6 +127,7 @@ class ArtifactStore:
 
     def __init__(self, juno_root: Path, *, policy: Optional[ArtifactPolicy] = None):
         self.root = Path(juno_root)
+        self.juno_root = self.root
         self.policy = policy or ArtifactPolicy()
         self.objects = ContentObjectStore(self.root)
         self.records_root = self.root / "artifacts"
@@ -266,7 +270,7 @@ class ArtifactStore:
         manifest_written = event_written = False
         lock = self._lock()
         try:
-            if self._record_dir(record_id).exists():
+            if self._record_dir(record_id).exists() or self._cold_record(record_id) is not None:
                 raise RecordError("ARTIFACT_ID_CONFLICT", f"Artifact {record_id} already exists")
             if predecessor_id is not None:
                 self.get(predecessor_id)
@@ -352,12 +356,27 @@ class ArtifactStore:
     def capture_model_output(self, *, content: bytes, **kwargs: Any) -> Dict[str, Any]:
         return self.create(profile="model-output", content=content, **kwargs)
 
+    def _cold_record(self, record_id: str) -> Optional[Dict[str, Any]]:
+        from .archive import ArchiveFormatError, iter_archive_envelopes
+        matches = [item for item in iter_archive_envelopes(self.root)
+                   if item["task"]["id"].casefold() == record_id.casefold()]
+        if len(matches) > 1:
+            raise ArchiveFormatError("duplicate cold Record ID: %s" % record_id)
+        if not matches:
+            return None
+        record = matches[0]["task"]
+        return record if record.get("kind") == "artifact" else None
+
     def get(self, record_id: str, revision: Optional[int] = None) -> Dict[str, Any]:
         directory = self._record_dir(record_id)
         if revision is None:
             paths = sorted(directory.glob("*.json")) if directory.is_dir() else []
             if not paths:
-                raise RecordError("RECORD_NOT_FOUND", f"Artifact {record_id!r} does not exist")
+                cold = self._cold_record(record_id)
+                if cold is None:
+                    raise RecordError("RECORD_NOT_FOUND", f"Artifact {record_id!r} does not exist")
+                self.validate_payload(cold["payload"])
+                return cold
             path = paths[-1]
         else:
             if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
@@ -370,6 +389,160 @@ class ArtifactStore:
         validate_record(record)
         self.validate_payload(record["payload"])
         return record
+
+    def _resolve_archive_id(self, id_or_slug: str) -> str:
+        matches = []
+        for directory in self.records_root.glob("*/*"):
+            try:
+                record = self.get(directory.name)
+            except RecordError:
+                continue
+            if id_or_slug == record["id"] or id_or_slug == record["slug"] or id_or_slug in record["aliases"]:
+                matches.append(record["id"])
+        from .archive import iter_archive_envelopes
+        for envelope in iter_archive_envelopes(self.root):
+            record = envelope["task"]
+            if record.get("kind") == "artifact" and (id_or_slug == record["id"] or
+                    id_or_slug == record["slug"] or id_or_slug in record.get("aliases", [])):
+                matches.append(record["id"])
+        matches = sorted(set(matches))
+        if not matches:
+            raise RecordError("RECORD_NOT_FOUND", f"no Artifact matches {id_or_slug!r}")
+        if len(matches) != 1:
+            raise RecordError("RECORD_IDENTITY_AMBIGUOUS", "Artifact identity is ambiguous")
+        return matches[0]
+
+    @contextmanager
+    def _record_archive_lock(self, id_or_slug: str):
+        from .archive import _record_archive_owner
+        record_id = self._resolve_archive_id(id_or_slug)
+        with _record_archive_owner(self.root):
+            handle = self._lock()
+            try:
+                if self._resolve_archive_id(id_or_slug) != record_id:
+                    raise RecordError("RECORD_IDENTITY_AMBIGUOUS", "Artifact identity changed while locking")
+                if self._cold_record(record_id) is not None:
+                    raise RecordError("RECORD_ARCHIVED", "archived Records are immutable")
+                yield record_id
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                handle.close()
+
+    def _record_archive_snapshot(self, record_id: str) -> Dict[str, Any]:
+        revisions = sorted(self._record_dir(record_id).glob("*.json"))
+        events = sorted((self.events_root / record_id[:2].lower() / record_id).glob("*.json"))
+        if not revisions or len(revisions) != len(events):
+            from .archive import ArchiveFormatError
+            raise ArchiveFormatError("Artifact snapshot/history is incomplete")
+        records = [json.loads(path.read_text(encoding="utf-8")) for path in revisions]
+        event_values = [json.loads(path.read_text(encoding="utf-8")) for path in events]
+        history = []
+        for item, event in zip(records, event_values):
+            history.extend(({"operation": "snapshot", "record_id": record_id,
+                             "revision": item["revision"], "record": item}, event))
+        current = records[-1]
+        objects = []
+        for item in records:
+            payload = item["payload"]
+            if payload.get("backend") == "local":
+                reference = {"path": payload["path"], "sha256": payload["sha256"],
+                             "size": payload["size"], "media_type": payload["media_type"]}
+                if reference not in objects:
+                    objects.append(reference)
+        return {"record": current, "history": history,
+                "paths": [*revisions, *events], "owned_objects": objects}
+
+    def _record_archive_verify_objects(self, objects) -> None:
+        for item in objects:
+            if item["path"] != self.objects.relative_path(item["sha256"]):
+                raise RecordError("ARTIFACT_PATH_UNSAFE", "local object path is not digest-derived")
+            self.objects.verify(item["sha256"], size=item["size"])
+
+    def _record_archive_refresh(self) -> None:
+        # Artifact lookup is canonical-file based; no SQLite authority exists.
+        return None
+
+    def _git_head(self) -> Optional[str]:
+        try:
+            return subprocess.check_output(["git", "-C", str(self.root.parent), "rev-parse", "HEAD"],
+                                           text=True, stderr=subprocess.DEVNULL).strip()
+        except (OSError, subprocess.CalledProcessError):
+            return None
+
+    def _config_hash(self) -> str:
+        encoded = json.dumps(self.policy.__dict__, sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
+    def archive_record(self, id_or_slug: str, *, expected_revision: int,
+                       receipt_path: Optional[Path] = None,
+                       provenance: Optional[Mapping[str, Any]] = None,
+                       fault=None) -> Dict[str, Any]:
+        from .archive import archive_record
+        return archive_record(self, id_or_slug, expected_revision=expected_revision,
+                              receipt_path=receipt_path, provenance=provenance, fault=fault)
+
+    def doctor(self) -> list[Dict[str, str]]:
+        """Verify hot/cold manifests, owned bytes, and report GC-only orphans."""
+        from .archive import archive_doctor, iter_archive_envelopes
+        failures = list(archive_doctor(self.root))
+        referenced = set()
+        hot_ids = set()
+        for directory in self.records_root.glob("*/*"):
+            revision_paths = sorted(directory.glob("*.json"))
+            if not revision_paths:
+                continue
+            try:
+                record = json.loads(revision_paths[-1].read_text(encoding="utf-8"))
+                hot_ids.add(record["id"].casefold())
+                for path in revision_paths:
+                    revision = json.loads(path.read_text(encoding="utf-8"))
+                    self.validate_payload(revision["payload"])
+                    if revision["payload"].get("backend") == "local":
+                        digest = revision["payload"]["sha256"]
+                        self.objects.verify(digest, size=revision["payload"]["size"])
+                        referenced.add(digest)
+            except Exception as exc:
+                failures.append({"path": str(directory), "error": str(exc)})
+        try:
+            for envelope in iter_archive_envelopes(self.root):
+                record = envelope["task"]
+                if record.get("kind") != "artifact":
+                    continue
+                if record["id"].casefold() in hot_ids:
+                    raise RecordError("RECORD_TIER_CONFLICT", "Artifact exists in hot and cold tiers")
+                for item in envelope.get("owned_objects", []):
+                    self.objects.verify(item["sha256"], size=item.get("size"))
+                    referenced.add(item["sha256"])
+        except Exception as exc:
+            failures.append({"path": str(self.root / "archive"), "error": str(exc)})
+        object_root = self.root / "objects" / "sha256"
+        for path in object_root.glob("*/*"):
+            if path.is_symlink() or not path.is_file() or path.name not in referenced:
+                failures.append({"path": str(path), "error": "unreferenced or unsafe object; explicit GC review required"})
+        return failures
+
+    def garbage_collection_plan(self) -> list[Dict[str, Any]]:
+        """Return bounded orphan evidence; this method never deletes objects."""
+        referenced = set()
+        for directory in self.records_root.glob("*/*"):
+            for path in directory.glob("*.json"):
+                payload = json.loads(path.read_text(encoding="utf-8"))["payload"]
+                if payload.get("backend") == "local":
+                    referenced.add(payload["sha256"])
+        from .archive import iter_archive_envelopes
+        for envelope in iter_archive_envelopes(self.root):
+            referenced.update(item["sha256"] for item in envelope.get("owned_objects", []))
+        return [{"path": str(path), "sha256": path.name, "size": path.stat().st_size}
+                for path in sorted((self.root / "objects" / "sha256").glob("*/*"))
+                if path.is_file() and path.name not in referenced]
+
+    def archive_history(self, record_id: str) -> list[Dict[str, Any]]:
+        from .archive import iter_archive_envelopes
+        matches = [item for item in iter_archive_envelopes(self.root)
+                   if item["task"]["id"] == record_id and item["task"].get("kind") == "artifact"]
+        if len(matches) != 1:
+            raise RecordError("RECORD_NOT_FOUND", "archived Artifact history does not resolve exactly")
+        return list(matches[0]["ledger"])
 
     def validate_payload(self, payload: Mapping[str, Any]) -> None:
         if not isinstance(payload, Mapping) or payload.get("backend") not in PAYLOAD_MODES:
@@ -423,6 +596,8 @@ class ArtifactStore:
         new immutable revision is added under the same Record identity.
         """
         current = self.get(record_id)
+        if current.get("tier") == "cold" and successor_id is None:
+            raise RecordError("RECORD_ARCHIVED", "archived Records are immutable; create a successor")
         if current["revision"] != expected_revision:
             raise RecordError("REVISION_CONFLICT", "artifact revision is stale")
         if value_digest(current["payload"]) != value_digest(expected_payload) or current["payload"] != dict(expected_payload):

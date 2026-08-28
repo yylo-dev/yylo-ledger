@@ -139,7 +139,7 @@ def task_record_projection(task: Mapping[str, Any]) -> Dict[str, Any]:
         "namespace": task.get("namespace") or "default",
         # Task status remains the compatibility source for lifecycle until the
         # archive migration defines a generic lifecycle state machine.
-        "lifecycle": task.get("status") or "backlog",
+        "lifecycle": task.get("lifecycle") or task.get("status") or "backlog",
         "tier": task.get("tier") or "hot",
         "schema_version": max(2, int(task.get("record_schema_version") or 2)),
         "media_type": task.get("media_type") or "text/markdown",
