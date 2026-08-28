@@ -12,6 +12,7 @@ from kanban.cli import ExitCode, TaskCLI
 from kanban.search import TaskSearch
 from kanban.storage import ArchivedTaskError, TaskStorage
 from tests.integration.test_archive_transaction import git, make_repository
+from yylo_ledger.records import RecordError
 
 
 def archived_repository(tmp_path):
@@ -252,16 +253,43 @@ def test_hot_cold_duplicate_and_pack_corruption_fail_closed(tmp_path):
     pack.write_bytes(original)
 
 
-def test_archived_ids_are_reserved_and_every_mutation_is_refused(tmp_path):
+def test_archived_ids_are_reserved_and_every_mutation_is_refused(tmp_path, monkeypatch):
     storage, _ = archived_repository(tmp_path)
+    archived = storage.find_task_exact("Aa1Aa1")
+    archived["blocked_by"] = ["Missing1"]
+    before_history = storage.history("Aa1Aa1", include_content=True)
+    before_cache = storage.cache.archive_entry("Aa1Aa1")
+    monkeypatch.setattr(storage, "rebuild_cache", lambda: (_ for _ in ()).throw(
+        AssertionError("archived mutation rebuilt cache")))
+    monkeypatch.setattr(storage, "_refresh_cache", lambda *args: (_ for _ in ()).throw(
+        AssertionError("archived mutation refreshed cache")))
+
     with pytest.raises(ArchivedTaskError, match="new task.*related_tasks"):
         storage.update_task("Aa1Aa1", {"status": "todo"})
     with pytest.raises(ArchivedTaskError):
-        storage.replace_task_record(storage.find_task_exact("Aa1Aa1"))
+        storage.replace_task_record(archived)
     with pytest.raises(ArchivedTaskError):
         storage.create_task(id="Aa1Aa1", body="reuse", status="todo")
     with pytest.raises(ValueError, match="collision"):
         storage.create_task(id="aa1aa1", body="case reuse", status="todo")
+
+    assert not storage.task_path("Aa1Aa1").exists()
+    assert storage.history("Aa1Aa1", include_content=True) == before_history
+    assert storage.cache.archive_entry("Aa1Aa1") == before_cache
+
+
+def test_non_archived_import_still_rejects_ledger_owned_creation_context(tmp_path):
+    storage, _ = archived_repository(tmp_path)
+    imported = storage.find_task_exact("Aa1Aa1")
+    imported["id"] = "Bb2Bb2"
+
+    with pytest.raises(RecordError) as caught:
+        storage.replace_task_record(imported)
+
+    assert caught.value.code == "SYSTEM_METADATA_RESERVED"
+    assert not storage.task_path("Bb2Bb2").exists()
+    assert storage.history("Bb2Bb2", include_content=True) == []
+    assert all(row["id"] != "Bb2Bb2" for row in (storage.cache.all() or []))
 
 
 def test_archived_terminal_blocker_satisfies_ready_without_entering_hot_collections(tmp_path):

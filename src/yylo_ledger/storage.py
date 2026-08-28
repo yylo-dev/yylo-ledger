@@ -939,10 +939,15 @@ class TaskStorage:
 
     def replace_task_record(self, record: Mapping[str, Any], operation: str = "update") -> MutationReceipt:
         """Losslessly replace one record for merge/import tooling under its task lock."""
-        record = self._metadata_record(plain_value(record))
         task_id = record["id"]
         with self._board_lock(), self._lock(task_id):
             path = self.task_path(task_id)
+            if not path.exists():
+                # Canonical tier authority precedes replacement-payload validation:
+                # a cold Record remains immutable even when its exported payload
+                # contains Ledger-owned creation context or other invalid fields.
+                self._raise_if_archived(task_id)
+            record = self._metadata_record(plain_value(record))
             self._assert_completion_invariant(record)
             if not path.exists():
                 if (record.get("system_metadata") or {}).get("creation_context") is not None:
