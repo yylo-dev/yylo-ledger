@@ -37,6 +37,29 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def synthetic_task_id(index):
+    """Return the stable six-character identity for one benchmark row."""
+    if not 0 <= index < 16 ** 5:
+        raise ValueError("synthetic task index must fit in five hexadecimal digits")
+    return f"T{index:05X}"
+
+
+def generate_synthetic_tasks(storage, count):
+    """Write deterministic benchmark Tasks through the production path contract."""
+    codec = MarkdownTaskCodec()
+    for index in range(count):
+        task_id = synthetic_task_id(index)
+        path = storage.task_path(task_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        modified = f"2026-07-{index % 28 + 1:02d}T00:00:00Z"
+        multiplier = 512 if index % 14000 == 0 else (8 if index % 101 == 0 else 1)
+        record = {"schema_version": 1, "id": task_id, "status": "todo", "created_date": modified,
+                  "last_modified": modified, "commit_hash": None, "feature_tags": ["synthetic"],
+                  "related_tasks": [], "blocked_by": [], "fields": {"due_date": f"2026-08-{index % 28 + 1:02d}"},
+                  "body": BODY * multiplier + str(index), "agent_response": RESPONSE * multiplier}
+        path.write_text(codec.dumps(record), encoding="utf-8")
+
+
 def main():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--tasks", type=int, choices=(14000, 140000), required=True)
@@ -72,19 +95,9 @@ def main():
         cfg["storage"]["base_path"] = str(tasks)
         cfg["custom_fields"] = {"due_date": {"type": "date"}}
         config_path.write_text(json.dumps(cfg), encoding="utf-8")
-        codec = MarkdownTaskCodec()
+        fixture_storage = TaskStorage(Config(str(config_path)))
         fixture_started = time.perf_counter()
-        for index in range(args.tasks):
-            task_id = f"T{index:05X}"[-6:]
-            path = tasks / task_id[:2] / f"{task_id}.md"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            modified = f"2026-07-{index % 28 + 1:02d}T00:00:00Z"
-            multiplier = 512 if index % 14000 == 0 else (8 if index % 101 == 0 else 1)
-            record = {"schema_version": 1, "id": task_id, "status": "todo", "created_date": modified,
-                      "last_modified": modified, "commit_hash": None, "feature_tags": ["synthetic"],
-                      "related_tasks": [], "blocked_by": [], "fields": {"due_date": f"2026-08-{index % 28 + 1:02d}"},
-                      "body": BODY * multiplier + str(index), "agent_response": RESPONSE * multiplier}
-            path.write_text(codec.dumps(record), encoding="utf-8")
+        generate_synthetic_tasks(fixture_storage, args.tasks)
         fixture_seconds = time.perf_counter() - fixture_started
         fixture_mode = "generated-committed-synthetic"
         (root / ".gitignore").write_text(".juno_task/cache/\n.juno_task/locks/\n.juno_task/ledger/\n")
@@ -190,14 +203,14 @@ def main():
     # measure mutations separately so prior synthetic dirt does not redefine a
     # read gate as an ever-growing Git-diff benchmark.
     for iteration in range(args.iterations):
-        target = f"T{iteration:05X}"[-6:]
+        target = synthetic_task_id(iteration)
         samples["get"].append(invoke(["get", target, "--compact", "-f", "json"])[0])
     for _ in range(args.iterations):
         samples["list"].append(invoke(["list", "--limit", "20", "-f", "json"])[0])
     for _ in range(args.iterations):
         samples["search"].append(invoke(["search", "--field", "due_date=2026-08-01", "--limit", "20", "-f", "json"])[0])
     for iteration in range(args.iterations):
-        target = f"T{iteration:05X}"[-6:]
+        target = synthetic_task_id(iteration)
         samples["mutation"].append(invoke(["update", target, "--status", "done", "-f", "json"])[0])
 
     _, before, _ = invoke(["list", "--limit", "20", "-f", "json"])
@@ -206,7 +219,7 @@ def main():
         storage.ledger.append("T00000", "recovery", "benchmark", ledger_hash, ledger_hash,
                               ledger_record, ledger_record, False)
     _, after, _ = invoke(["list", "--limit", "20", "-f", "json"])
-    unchanged = tasks / "T0" / "T000FF.md"; unchanged_hash = sha(unchanged)
+    unchanged = storage.task_path("T000FF"); unchanged_hash = sha(unchanged)
     invoke(["update", "T00001", "--body", "write amplification check", "-f", "json"])
     gates = {"get_p95_under_75ms": percentile(samples["get"]) < 75,
              "mutation_p95_under_150ms": percentile(samples["mutation"]) < 150,
