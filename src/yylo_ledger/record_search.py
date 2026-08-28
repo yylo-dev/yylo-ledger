@@ -410,10 +410,13 @@ class RecordSearchIndex:
         for name, value in query.provenance.items():
             where.append("EXISTS(SELECT 1 FROM provenance p WHERE p.record_id=r.id AND p.name=? AND p.value=?)")
             params.extend((name, str(value)))
+        creation_git_columns = {"role": "role", "head_sha": "head_sha", "ref": "ref",
+                                "worktree_dirty": "dirty", "repository_id": "repository_id"}
         for name, value in query.creation_git.items():
-            if name not in {"role", "head_sha", "ref", "worktree_dirty", "repository_id"}:
+            column = creation_git_columns.get(name)
+            if column is None:
                 raise RecordError("SEARCH_FILTER_INVALID", "unsupported creation Git filter")
-            where.append(f"EXISTS(SELECT 1 FROM creation_git g WHERE g.record_id=r.id AND g.{name}=?)")
+            where.append(f"EXISTS(SELECT 1 FROM creation_git g WHERE g.record_id=r.id AND g.{column}=?)")
             params.append(int(value) if name == "worktree_dirty" and isinstance(value, bool) else value)
         for path, value in query.custom_equals.items():
             where.append("EXISTS(SELECT 1 FROM custom_values c WHERE c.record_id=r.id AND c.path=? AND c.value_json=?)")
