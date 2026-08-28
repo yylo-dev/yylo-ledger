@@ -43,8 +43,9 @@ def fixtures():
     return task, wiki, artifact, secret
 
 
-def make_index(tmp_path):
+def make_index(tmp_path, *, git_dirty=False):
     values = fixtures()
+    values[1]["system_metadata"]["creation_context"]["git"]["repositories"][0]["worktree_dirty"] = git_dirty
     canonical = {}
     sources = []
     for record in values:
@@ -75,6 +76,19 @@ def test_generic_and_typed_filters_share_one_deterministic_engine(tmp_path):
                             digest="b" * 64, backend="external", size_min=40,
                             size_max=50, limit=10), reader)
     assert [item["id"] for item in artifact.records] == ["Ar1ti2"]
+
+
+@pytest.mark.parametrize("dirty", [False, True])
+def test_creation_git_dirty_filter_uses_canonical_column(tmp_path, dirty):
+    index, _, reader = make_index(tmp_path, git_dirty=dirty)
+
+    matching = index.search(RecordSearchQuery(
+        scope="all", creation_git={"worktree_dirty": dirty}, limit=10), reader)
+    opposite = index.search(RecordSearchQuery(
+        scope="all", creation_git={"worktree_dirty": not dirty}, limit=10), reader)
+
+    assert [item["id"] for item in matching.records] == ["Do1cu2"]
+    assert opposite.records == []
 
 
 def test_cursor_is_bounded_stable_and_fails_after_revision_change(tmp_path):
