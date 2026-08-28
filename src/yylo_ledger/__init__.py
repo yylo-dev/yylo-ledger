@@ -30,6 +30,10 @@ from .records import (
 )
 from .artifacts import ArtifactPolicy, ArtifactStore, validate_retention
 from .content_objects import ContentObjectStore
+from .record_search import (
+    IndexedRecord, RecordSearchIndex, RecordSearchPage, RecordSearchPolicy,
+    RecordSearchQuery,
+)
 from .documents import (
     DocumentStore, create_document, exact_update_document, extract_record_links,
     validate_document, validate_record_links,
@@ -75,6 +79,11 @@ __all__ = [
     "ArtifactPolicy",
     "ArtifactStore",
     "ContentObjectStore",
+    "IndexedRecord",
+    "RecordSearchIndex",
+    "RecordSearchPage",
+    "RecordSearchPolicy",
+    "RecordSearchQuery",
     "validate_retention",
     "RecordProfile",
     "ProfileRegistry",
