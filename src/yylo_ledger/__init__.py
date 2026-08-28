@@ -28,6 +28,8 @@ from .records import (
     Record, RecordError, Relation, RevisionProvenance, exact_replace,
     task_record_projection,
 )
+from .artifacts import ArtifactPolicy, ArtifactStore, validate_retention
+from .content_objects import ContentObjectStore
 from .config import Config
 from .validators import TaskValidator, ValidationError
 
@@ -60,6 +62,10 @@ __all__ = [
     "RevisionProvenance",
     "exact_replace",
     "task_record_projection",
+    "ArtifactPolicy",
+    "ArtifactStore",
+    "ContentObjectStore",
+    "validate_retention",
     "Config",
     "TaskValidator",
     "ValidationError",
