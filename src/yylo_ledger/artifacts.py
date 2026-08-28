@@ -663,6 +663,10 @@ class ArtifactStore:
         record = self._record(record_id=target_id, title=title, profile=profile, payload=payload,
                               revision=revision, created_date=current["created_date"],
                               provenance=provenance, retention=retention)
+        creation_context = (current.get("system_metadata") or {}).get("creation_context")
+        if creation_context is not None:
+            record = attach_creation_context(record, creation_context)
+            validate_record(record)
         manifest_path, event_path = self._revision_path(target_id, revision), self._event_path(target_id, revision)
         manifest_written = event_written = False
         lock = self._lock()
