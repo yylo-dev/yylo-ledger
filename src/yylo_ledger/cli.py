@@ -281,6 +281,19 @@ class TaskCLI:
         # legacy task compatibility surface; they are not silently reinterpreted.
         add_record_parsers(subparsers)
 
+        host_parser = subparsers.add_parser(
+            'host', help='Serve bounded read-only Record projections', allow_abbrev=False)
+        host_parser.add_argument('--host', default='127.0.0.1',
+                                 help='Explicit bind host (default: 127.0.0.1)')
+        host_parser.add_argument('--port', type=int, default=8765,
+                                 help='Explicit bind port, or 0 for an ephemeral port (default: 8765)')
+        host_parser.add_argument('--access-policy', choices=['local', 'private'], default='local',
+                                 help='local requires loopback; private permits an explicit non-loopback bind')
+        host_parser.add_argument('--allow-redirect-host', action='append', default=[], metavar='HOST',
+                                 help='Approve HTTPS Artifact redirects to exactly this hostname (repeatable)')
+        host_parser.add_argument('--max-output-bytes', type=int, default=1024 * 1024)
+        host_parser.add_argument('--max-range-bytes', type=int, default=256 * 1024)
+
         # CREATE command
         create_parser = subparsers.add_parser(
             'create',
@@ -3230,8 +3243,8 @@ end
                 arg in stdin_file_flags and idx + 1 < len(args_to_parse) and args_to_parse[idx + 1] == '-'
                 for idx, arg in enumerate(args_to_parse)
             )
-            registry_management = 'project' in args_to_parse
-            stdin_body = None if file_flag_reads_stdin or registry_management else self._read_stdin_if_available()
+            non_stdin_command = any(value in args_to_parse for value in ('project', 'host'))
+            stdin_body = None if file_flag_reads_stdin or non_stdin_command else self._read_stdin_if_available()
             body_from_implicit_stdin = False
 
             if stdin_body and not args_to_parse:
@@ -3256,7 +3269,7 @@ end
                         # Insert right after 'create' command (position 1), before any flags
                         args_to_parse = ['create', stdin_body] + args_to_parse[1:]
                         body_from_implicit_stdin = True
-                elif first_arg.startswith('-') or first_arg not in ['record', *TYPED_GROUPS, 'project', 'create', 'search', 'get', 'show', 'update', 'list', 'archive', 'archive-pack', 'archive-search', 'mark', 'umbrella-finalize', 'merge', 'deps', 'ready', 'order', 'tags', 'completion', '__complete']:
+                elif first_arg.startswith('-') or first_arg not in ['record', *TYPED_GROUPS, 'host', 'project', 'create', 'search', 'get', 'show', 'update', 'list', 'archive', 'archive-pack', 'archive-search', 'mark', 'umbrella-finalize', 'merge', 'deps', 'ready', 'order', 'tags', 'completion', '__complete']:
                     # No command specified or shortcut syntax with flags
                     # Treat stdin as task body for create
                     if first_arg.startswith('-'):
@@ -3278,7 +3291,7 @@ end
 
             if args_to_parse and len(args_to_parse) > 0 and not args_to_parse[0].startswith('-'):
                 # Check if first argument is not a known command
-                known_commands = ['record', *TYPED_GROUPS, 'project', 'create', 'search', 'get', 'show', 'update', 'list', 'archive', 'archive-pack', 'archive-search', 'mark', 'umbrella-finalize', 'merge', 'deps', 'ready', 'order', 'tags', 'history', 'reconcile', 'doctor', 'cache', 'convert', 'compatibility', 'export-legacy', 'rollback', 'completion', '__complete']
+                known_commands = ['record', *TYPED_GROUPS, 'host', 'project', 'create', 'search', 'get', 'show', 'update', 'list', 'archive', 'archive-pack', 'archive-search', 'mark', 'umbrella-finalize', 'merge', 'deps', 'ready', 'order', 'tags', 'history', 'reconcile', 'doctor', 'cache', 'convert', 'compatibility', 'export-legacy', 'rollback', 'completion', '__complete']
                 if args_to_parse[0] not in known_commands:
                     # Treat as shortcut: yylo-ledger "task body" -> yylo-ledger create "task body"
                     args_to_parse = ['create'] + args_to_parse
@@ -3308,6 +3321,25 @@ end
 
             if parsed_args.command == '__complete':
                 return self.cmd_internal_complete(parsed_args)
+
+            if parsed_args.command == 'host':
+                # Hosting must remain read-only even when pointed at an
+                # uninitialized prefix: do not create config, storage, or cache paths.
+                from .hosting import HostPolicy, serve
+                try:
+                    config = Config(parsed_args.config, auto_create=False)
+                    storage = TaskStorage(config, create_directories=False)
+                    policy = HostPolicy(
+                        access=parsed_args.access_policy,
+                        allowed_redirect_hosts=tuple(parsed_args.allow_redirect_host),
+                        max_output_bytes=parsed_args.max_output_bytes,
+                        max_range_bytes=parsed_args.max_range_bytes,
+                    )
+                    serve(storage, host=parsed_args.host, port=parsed_args.port, policy=policy)
+                    return ExitCode.SUCCESS
+                except (ConfigError, OSError, ValueError) as exc:
+                    print(f"Hosting error: {exc}", file=sys.stderr)
+                    return ExitCode.CONFIG_ERROR
 
             # Initialize components with config path
             self._init_components(parsed_args.config)

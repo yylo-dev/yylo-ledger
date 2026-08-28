@@ -74,15 +74,16 @@ class MutationReceipt:
 class TaskStorage:
     """One Markdown file per task, one lock and append-only ledger per task."""
 
-    def __init__(self, config: Optional[Config] = None):
-        self.config = config or Config()
+    def __init__(self, config: Optional[Config] = None, *, create_directories: bool = True):
+        self.config = config or Config(auto_create=create_directories)
         self.base_path = os.path.abspath(self.config.storage_base_path)
         self.file_pattern = "*/*.md"
         self.default_file = ""
         self.tasks_root = Path(self.base_path)
         self.juno_root = self.tasks_root.parent
         self.project_root = self.juno_root.parent
-        self.tasks_root.mkdir(parents=True, exist_ok=True)
+        if create_directories:
+            self.tasks_root.mkdir(parents=True, exist_ok=True)
         self.codec = MarkdownTaskCodec()
         self.ledger = TaskLedger(self.juno_root / "ledger")
         self.cache = TaskCache(self.juno_root / "cache" / "kanban.sqlite3")

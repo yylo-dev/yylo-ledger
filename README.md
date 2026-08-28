@@ -212,6 +212,29 @@ and command-specific flags/choice values are also suggested (e.g. `list --sort <
 - Core/tag/body filters plus typed custom fields, date ranges, and `--overdue`
 - Bounded/redacted broad output with explicit `metadata`, `summary`, and audited `full` projections
 
+### 🌐 **Optional Read-Only Record Host**
+
+`yylo-ledger host` serves canonical Record projections without a write API, cache rebuild,
+workflow execution, or remote fetch. It binds to `127.0.0.1:8765` under the `local` access
+policy by default; a non-loopback bind requires the explicit `private` policy. Routes are
+`/record/ID`, `/record/ID/history`, `/wiki/ID`, `/workflow/ID`, and `/artifact/ID`, with
+slug/alias resolution to the same immutable ID. Artifact bytes use `/artifact/ID/content`
+or `/artifact/ID/download`; external download redirects require a repeated exact
+`--allow-redirect-host HOST` approval and HTTPS.
+
+```bash
+yylo-ledger host --host 127.0.0.1 --port 8765 --access-policy local
+# The `yy ledger ...` transparent delegate exposes the same independently installed runtime:
+yy ledger host --host 127.0.0.1 --port 8765 --access-policy local
+```
+
+JSON is the default representation. Clients may request `text/markdown`, YAML, plain text,
+or inert rendered HTML where supported. Responses are bounded and carry canonical links,
+ETags, no-sniff headers, and safe structured errors. Restricted Records, malformed archive
+truth, ambiguous slugs, traversal/symlink paths, unsafe redirects, active source HTML, and
+unbounded byte ranges fail closed. This package owns only shipped Ledger behavior; project
+and controller wiki content remains owned by each initialized workspace.
+
 ### 🏷️ **Flexible Organization**
 - Configurable status workflows (backlog → todo → done)
 - Feature tags for categorization
