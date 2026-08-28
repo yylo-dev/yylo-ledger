@@ -21,6 +21,7 @@ from typing import Any, BinaryIO, Callable, Dict, Mapping, Optional
 from urllib.parse import urlparse
 
 from .content_objects import ContentObjectStore, sha256_bytes
+from .git_creation import attach_creation_context, capture_creation_context
 from .records import RECORD_ID_RE, RecordError, default_slug, validate_record, value_digest
 
 
@@ -125,9 +126,14 @@ def validate_retention(retention: Optional[Mapping[str, Any]]) -> Dict[str, Any]
 class ArtifactStore:
     """Transactional immutable manifests plus a deduplicated local object store."""
 
-    def __init__(self, juno_root: Path, *, policy: Optional[ArtifactPolicy] = None):
+    def __init__(self, juno_root: Path, *, policy: Optional[ArtifactPolicy] = None,
+                 project_root: Optional[Path] = None,
+                 repository_ids: Optional[Mapping[str, str]] = None):
         self.root = Path(juno_root)
         self.juno_root = self.root
+        self.controller_root = self.root.parent
+        self.project_root = Path(project_root) if project_root is not None else self.controller_root
+        self.repository_ids = dict(repository_ids or {})
         self.policy = policy or ArtifactPolicy()
         self.objects = ContentObjectStore(self.root)
         self.records_root = self.root / "artifacts"
@@ -251,7 +257,8 @@ class ArtifactStore:
                uri: Optional[str] = None, digest: Optional[str] = None, size: Optional[int] = None,
                provenance: Optional[Mapping[str, Any]] = None,
                retention: Optional[Mapping[str, Any]] = None,
-               predecessor_id: Optional[str] = None) -> Dict[str, Any]:
+               predecessor_id: Optional[str] = None,
+               required_git_roles=()) -> Dict[str, Any]:
         self._validate_id(record_id)
         if not isinstance(title, str) or not title.strip():
             raise RecordError("RECORD_INVALID", "artifact title must be a non-empty string")
@@ -298,6 +305,11 @@ class ArtifactStore:
             record = self._record(record_id=record_id, title=title, profile=profile, payload=payload,
                                   revision=1, created_date=created, provenance=provenance_value,
                                   retention=retention_value, predecessor_id=predecessor_id)
+            context = capture_creation_context(
+                controller_root=self.controller_root, project_root=self.project_root,
+                required_roles=required_git_roles, repository_ids=self.repository_ids)
+            record = attach_creation_context(record, context)
+            validate_record(record)
             self._mutation_fault("after_object")
             encoded = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode() + b"\n"
             event = {"operation": "create", "record_id": record_id, "revision": 1,

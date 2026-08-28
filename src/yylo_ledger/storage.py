@@ -22,6 +22,7 @@ from typing import Any, Dict, Iterator, List, Mapping, Optional, Set
 from .cache import TaskCache
 from .codec import MarkdownTaskCodec, TaskFormatError, normalized_bytes, plain_value
 from .config import Config
+from .git_creation import attach_creation_context, capture_creation_context
 from .ledger import LedgerError, TaskLedger
 from .models import Task
 from .records import (RecordError, RevisionProvenance, exact_replace,
@@ -74,7 +75,8 @@ class MutationReceipt:
 class TaskStorage:
     """One Markdown file per task, one lock and append-only ledger per task."""
 
-    def __init__(self, config: Optional[Config] = None, *, create_directories: bool = True):
+    def __init__(self, config: Optional[Config] = None, *, create_directories: bool = True,
+                 git_project_root: Optional[Path] = None):
         self.config = config or Config(auto_create=create_directories)
         self.base_path = os.path.abspath(self.config.storage_base_path)
         self.file_pattern = "*/*.md"
@@ -82,6 +84,11 @@ class TaskStorage:
         self.tasks_root = Path(self.base_path)
         self.juno_root = self.tasks_root.parent
         self.project_root = self.juno_root.parent
+        creation_config = self.config.to_dict().get("git_creation_context", {})
+        configured_project = (git_project_root or creation_config.get("project_root")
+                              or os.environ.get("YYLO_LEDGER_INVOCATION_ROOT"))
+        self.git_project_root = Path(configured_project) if configured_project else self.project_root
+        self.git_repository_ids = dict(creation_config.get("repository_ids") or {})
         if create_directories:
             self.tasks_root.mkdir(parents=True, exist_ok=True)
         self.codec = MarkdownTaskCodec()
@@ -726,7 +733,8 @@ class TaskStorage:
                 f"cannot reopen blocker {task_id}; completed dependents would become blocked: "
                 + ", ".join(sorted(blocked_done)))
 
-    def write_task(self, task: Task, filepath: Optional[str] = None):
+    def write_task(self, task: Task, filepath: Optional[str] = None, *,
+                   required_git_roles=()):
         self._assert_not_frozen()
         if filepath and Path(filepath).suffix == ".ndjson":
             raise ValueError("NDJSON is import-only; runtime writes Markdown task files")
@@ -743,6 +751,10 @@ class TaskStorage:
                 raise ValueError(f"task already exists: {task_id}")
             self._enforce_window({}, {"fields": record.get("fields") or {}})
             self._assert_completion_invariant(record)
+            context = capture_creation_context(
+                controller_root=self.project_root, project_root=self.git_project_root,
+                required_roles=required_git_roles, repository_ids=self.git_repository_ids)
+            record = attach_creation_context(record, context)
             digest = self.normalized_hash(record)
             event = self.ledger.prepare(task_id, "create", "cli", None, digest,
                                         {}, plain_value(record), True)
@@ -755,10 +767,11 @@ class TaskStorage:
                                                 event["changed_paths"], str(path), transaction)
         return self.last_receipt
 
-    def create_task(self, **kwargs) -> Task:
+    def create_task(self, *, required_git_roles=(), **kwargs) -> Task:
         task = Task(config=self.config.to_dict(), **kwargs)
-        self.write_task(task)
-        return task
+        self.write_task(task, required_git_roles=required_git_roles)
+        return Task.from_dict(plain_value(self._read_path(self.task_path(task.id))),
+                              validate=False, config=self.config.to_dict())
 
     def _reconcile_locked(self, task_id: str, current: Mapping[str, Any]):
         latest = self.ledger.latest(task_id)
@@ -865,6 +878,8 @@ class TaskStorage:
                 if expected_digest is not None and mode != "payload" and before_hash != expected_digest:
                     raise RecordError("REVISION_CONFLICT", "Record digest is stale")
 
+                if path == "/system_metadata" or path.startswith("/system_metadata/"):
+                    raise RecordError("IMMUTABLE_FIELD", "canonical system metadata is immutable")
                 match = exact_replace(projected, path=path, expected=expected,
                                       replacement=replacement, mode=mode,
                                       expected_digest=expected_digest if mode == "payload" else None)
@@ -930,6 +945,12 @@ class TaskStorage:
             path = self.task_path(task_id)
             self._assert_completion_invariant(record)
             if not path.exists():
+                if (record.get("system_metadata") or {}).get("creation_context") is not None:
+                    raise RecordError("SYSTEM_METADATA_RESERVED", "creation context cannot be supplied by imports")
+                context = capture_creation_context(
+                    controller_root=self.project_root, project_root=self.git_project_root,
+                    repository_ids=self.git_repository_ids)
+                record = attach_creation_context(record, context)
                 collision = self._case_collision(task_id)
                 if collision:
                     if collision == task_id:
@@ -942,6 +963,10 @@ class TaskStorage:
                 effective_operation = "create"
             else:
                 before = self._read_path(path)
+                before_creation = (before.get("system_metadata") or {}).get("creation_context")
+                after_creation = (record.get("system_metadata") or {}).get("creation_context")
+                if after_creation != before_creation:
+                    raise RecordError("IMMUTABLE_FIELD", "creation context cannot be changed by imports")
                 if before.get("status") in ("done", "archive") and record.get("status") not in ("done", "archive"):
                     self._assert_resolved_blocker_not_reopened(task_id, str(record.get("status")))
                 self._reconcile_locked(task_id, before)

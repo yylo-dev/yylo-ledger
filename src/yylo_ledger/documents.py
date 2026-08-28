@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
+from .git_creation import attach_creation_context, capture_creation_context
 from .profiles import ProfileRegistry, default_profile_registry
 from .records import (RecordError, RevisionProvenance, default_slug, exact_replace,
                       payload_digest, validate_record, value_digest)
@@ -92,8 +93,8 @@ def create_document(*, record_id: str, title: str, profile: str, media_type: str
     system = copy.deepcopy(dict(system_metadata or {}))
     # Revision provenance is canonical system metadata; imported custom/front
     # matter data cannot place it there through this API.
-    if "revision_provenance" in system:
-        raise RecordError("SYSTEM_METADATA_RESERVED", "revision provenance is Ledger-owned")
+    if "revision_provenance" in system or "creation_context" in system:
+        raise RecordError("SYSTEM_METADATA_RESERVED", "revision provenance and creation context are Ledger-owned")
     system["revision_provenance"] = [actor.to_dict()]
     payload = {"backend": "inline", "text": text, "sha256": payload_digest(text),
                "schema_ref": schema_ref}
@@ -182,9 +183,14 @@ def exact_update_document(record: Mapping[str, Any], *, path: str, expected: Any
 class DocumentStore:
     """Canonical immutable revision files for wiki/workflow Records."""
 
-    def __init__(self, juno_root: Path, *, registry: Optional[ProfileRegistry] = None):
+    def __init__(self, juno_root: Path, *, registry: Optional[ProfileRegistry] = None,
+                 project_root: Optional[Path] = None,
+                 repository_ids: Optional[Mapping[str, str]] = None):
         self.root = Path(juno_root)
         self.juno_root = self.root
+        self.controller_root = self.root.parent
+        self.project_root = Path(project_root) if project_root is not None else self.controller_root
+        self.repository_ids = dict(repository_ids or {})
         self.registry = registry or default_profile_registry()
         self.records_root = self.root / "documents"
         self.events_root = self.root / "document-ledger"
@@ -219,12 +225,17 @@ class DocumentStore:
             raise ArchiveFormatError("duplicate cold Document ID")
         return matches[0] if matches else None
 
-    def create(self, **kwargs: Any) -> Dict[str, Any]:
+    def create(self, *, required_git_roles=(), **kwargs: Any) -> Dict[str, Any]:
         record = create_document(registry=self.registry, **kwargs)
         record_id = record["id"]
         with self._lock(record_id):
             if self._directory(record_id).exists() or self._cold_envelope(record_id):
                 raise RecordError("DOCUMENT_ID_CONFLICT", "Document ID already exists")
+            context = capture_creation_context(
+                controller_root=self.controller_root, project_root=self.project_root,
+                required_roles=required_git_roles, repository_ids=self.repository_ids)
+            record = attach_creation_context(record, context)
+            validate_document(record, registry=self.registry)
             event = {"operation": "create", "record_id": record_id, "revision": 1,
                      "record_sha256": value_digest(record), "timestamp": record["created_date"]}
             revision = self._directory(record_id) / "00000001.json"

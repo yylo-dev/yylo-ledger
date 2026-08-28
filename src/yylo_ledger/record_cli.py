@@ -72,6 +72,8 @@ def _add_search(parser: argparse.ArgumentParser) -> None:
 
 def _add_create(parser: argparse.ArgumentParser, group: str) -> None:
     parser.add_argument("--id", dest="record_id")
+    parser.add_argument("--require-git-role", action="append", choices=("controller", "project"),
+                        default=[], help="atomically require this Git role at revision 1")
     parser.add_argument("--title")
     parser.add_argument("--slug")
     parser.add_argument("--namespace", default="default")
@@ -285,8 +287,12 @@ class RecordCLI:
         self.cli = task_cli
         self.tasks = task_cli.storage
         self.root = self.tasks.juno_root
-        self.documents = DocumentStore(self.root)
-        self.artifacts = ArtifactStore(self.root)
+        self.documents = DocumentStore(
+            self.root, project_root=self.tasks.git_project_root,
+            repository_ids=self.tasks.git_repository_ids)
+        self.artifacts = ArtifactStore(
+            self.root, project_root=self.tasks.git_project_root,
+            repository_ids=self.tasks.git_repository_ids)
 
     @staticmethod
     def _type(group: str) -> tuple[Optional[str], Optional[str]]:
@@ -382,7 +388,8 @@ class RecordCLI:
                 raise RecordError("INPUT_REQUIRED", "task body requires a positional value or --body-file")
             task = self.tasks.create_task(body=body,
                 status=getattr(args, "status", None) or self.cli.config.default_status,
-                feature_tags=getattr(args, "tags", None) or [])
+                feature_tags=getattr(args, "tags", None) or [],
+                required_git_roles=args.require_git_role)
             record = task_record_projection(task.to_dict())
         elif group in ("wiki", "workflow") or (group == "record" and args.kind == "document"):
             profile = group if group != "record" else args.profile
@@ -394,7 +401,8 @@ class RecordCLI:
             record = self.documents.create(record_id=args.record_id or _new_id(), title=args.title,
                 profile=profile, media_type="text/markdown" if profile == "wiki" else "application/yaml",
                 text=text, namespace=args.namespace, slug=args.slug, aliases=args.alias,
-                schema_ref=None if profile == "wiki" else WORKFLOW_SCHEMA_V1)
+                schema_ref=None if profile == "wiki" else WORKFLOW_SCHEMA_V1,
+                required_git_roles=args.require_git_role)
         else:
             profile = getattr(args, "artifact_profile", None) or getattr(args, "profile", None)
             if profile not in ARTIFACT_PROFILES:
@@ -408,7 +416,8 @@ class RecordCLI:
             retention = json.loads(Path(args.retention_file).read_text()) if args.retention_file else None
             kwargs = dict(record_id=args.record_id or _new_id(), title=args.title, profile=profile, mode=mode,
                           content=content, media_type=args.media_type, uri=args.uri, digest=args.digest, size=args.size,
-                          provenance=_pairs(args.provenance), retention=retention, predecessor_id=args.predecessor_id)
+                          provenance=_pairs(args.provenance), retention=retention, predecessor_id=args.predecessor_id,
+                          required_git_roles=args.require_git_role)
             record = self.artifacts.create(**kwargs)
         print(_format([_with_receipt(record, "create")], "json", single=True))
         return 0

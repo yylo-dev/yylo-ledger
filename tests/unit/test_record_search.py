@@ -25,9 +25,10 @@ def fixtures():
     wiki = document("Do1cu2", "Runbook", "Blue deploy instructions", aliases=["old-runbook"],
                     relations=[{"type": "related", "record_id": "Ta1sk2"}],
                     custom_metadata={"com.example": {"team": "blue"}})
-    wiki["system_metadata"]["creation_context"] = {"git": {"repositories": [{
-        "roles": ["controller", "project"], "head_sha": "a" * 40,
-        "ref": "refs/heads/main", "worktree_dirty": False}]}}
+    wiki["system_metadata"]["creation_context"] = {"git": {
+        "schema_version": 1, "captured_at": "2026-08-01T00:00:00Z", "repositories": [{
+            "roles": ["controller", "project"], "head_sha": "a" * 40,
+            "ref": "refs/heads/main", "worktree_dirty": False}]}}
     artifact = {
         "id": "Ar1ti2", "slug": "Ar1ti2-report", "aliases": [], "kind": "artifact",
         "profile": "report", "title": "Build report", "namespace": "default",

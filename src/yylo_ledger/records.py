@@ -18,6 +18,7 @@ SLUG_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,199})$")
 RECORD_ID_RE = re.compile(r"^(?=.*[A-Za-z])(?=.*[0-9])[A-Za-z0-9]{6}$")
 RELATION_TYPE_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
 PROVENANCE_FIELDS = ("actor_type", "actor", "agent", "model", "session_id", "run_id", "invocation_id")
+_GIT_HEAD_RE = re.compile(r"^[0-9a-f]{32,}$")
 
 
 class RecordError(ValueError):
@@ -196,6 +197,44 @@ def validate_record(record: Mapping[str, Any]) -> None:
     for name in ("system_metadata", "custom_metadata"):
         if not isinstance(record[name], Mapping):
             raise RecordError("RECORD_INVALID", f"{name} must be an object")
+    creation = record["system_metadata"].get("creation_context")
+    if creation is not None:
+        if not isinstance(creation, Mapping) or set(creation) != {"git"}:
+            raise RecordError("GIT_CONTEXT_INVALID", "creation context must contain only versioned Git metadata")
+        git = creation["git"]
+        if (not isinstance(git, Mapping) or set(git) != {"schema_version", "captured_at", "repositories"}
+                or git.get("schema_version") != 1 or not isinstance(git.get("captured_at"), str)
+                or not isinstance(git.get("repositories"), list)):
+            raise RecordError("GIT_CONTEXT_INVALID", "Git creation context has an invalid envelope")
+        previous = None
+        seen_roles = set()
+        for repository in git["repositories"]:
+            allowed = {"roles", "repository_id", "head_sha", "ref", "worktree_dirty"}
+            if not isinstance(repository, Mapping) or not set(repository).issubset(allowed):
+                raise RecordError("GIT_CONTEXT_INVALID", "Git repository observation has unknown fields")
+            roles = repository.get("roles")
+            if (not isinstance(roles, list) or not roles or roles != sorted(set(roles))
+                    or any(role not in {"controller", "project"} for role in roles)
+                    or seen_roles.intersection(roles)):
+                raise RecordError("GIT_CONTEXT_INVALID", "Git repository roles are invalid or duplicated")
+            seen_roles.update(roles)
+            sha = repository.get("head_sha")
+            if not isinstance(sha, str) or not _GIT_HEAD_RE.fullmatch(sha):
+                raise RecordError("GIT_CONTEXT_INVALID", "Git HEAD must be a full lowercase object ID")
+            if not isinstance(repository.get("worktree_dirty"), bool):
+                raise RecordError("GIT_CONTEXT_INVALID", "Git dirty state must be boolean")
+            if "ref" in repository and (not isinstance(repository["ref"], str)
+                                         or not repository["ref"].startswith("refs/")
+                                         or "\n" in repository["ref"]):
+                raise RecordError("GIT_CONTEXT_INVALID", "Git symbolic ref is invalid")
+            if "repository_id" in repository and (not isinstance(repository["repository_id"], str)
+                                                    or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._~-]{0,127}",
+                                                                        repository["repository_id"])):
+                raise RecordError("GIT_CONTEXT_INVALID", "configured repository identity is invalid")
+            order = (roles, repository.get("repository_id", ""), sha)
+            if previous is not None and order < previous:
+                raise RecordError("GIT_CONTEXT_INVALID", "Git repository observations are not deterministic")
+            previous = order
 
 
 def value_digest(value: Any) -> str:
