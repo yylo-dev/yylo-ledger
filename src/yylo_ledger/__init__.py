@@ -28,6 +28,16 @@ from .records import (
     Record, RecordError, Relation, RevisionProvenance, exact_replace,
     task_record_projection,
 )
+from .documents import (
+    create_document, exact_update_document, extract_record_links,
+    validate_document, validate_record_links,
+)
+from .frontmatter import emit_wiki_frontmatter, import_wiki_frontmatter, parse_wiki_frontmatter
+from .profiles import (
+    ProfileRegistry, RecordProfile, WIKI_PROFILE, WORKFLOW_PROFILE,
+    WORKFLOW_SCHEMA_V1, default_profile_registry,
+)
+from .workflow_yaml import emit_workflow_yaml, normalize_workflow_yaml, parse_workflow_yaml
 from .config import Config
 from .validators import TaskValidator, ValidationError
 
@@ -60,6 +70,23 @@ __all__ = [
     "RevisionProvenance",
     "exact_replace",
     "task_record_projection",
+    "RecordProfile",
+    "ProfileRegistry",
+    "WIKI_PROFILE",
+    "WORKFLOW_PROFILE",
+    "WORKFLOW_SCHEMA_V1",
+    "default_profile_registry",
+    "create_document",
+    "validate_document",
+    "exact_update_document",
+    "extract_record_links",
+    "validate_record_links",
+    "parse_wiki_frontmatter",
+    "emit_wiki_frontmatter",
+    "import_wiki_frontmatter",
+    "parse_workflow_yaml",
+    "emit_workflow_yaml",
+    "normalize_workflow_yaml",
     "Config",
     "TaskValidator",
     "ValidationError",
