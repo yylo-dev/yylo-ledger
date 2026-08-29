@@ -47,8 +47,11 @@ class VersionBumper:
         """Initialize with path to setup.py file."""
         self.setup_file = setup_file
         self.init_file = setup_file.parent / 'src' / 'yylo_ledger' / '__init__.py'
+        self.readme_file = setup_file.parent / 'README.md'
         if not self.init_file.exists():
             raise FileNotFoundError(f"Init file not found: {self.init_file}")
+        if not self.readme_file.exists():
+            raise FileNotFoundError(f"README file not found: {self.readme_file}")
 
     def get_current_version(self) -> str:
         """Extract current local version from __init__.py."""
@@ -151,24 +154,30 @@ class VersionBumper:
         return new_version
 
     def update_version_file(self, new_version: str, dry_run: bool = False) -> bool:
-        """Update version in __init__.py (single source of truth; setup.py reads from it)."""
+        """Update the canonical version and its public README projection."""
         content = self.init_file.read_text(encoding='utf-8')
+        readme = self.readme_file.read_text(encoding='utf-8')
 
         pattern = r'(^__version__\s*=\s*["\'])([^"\']+)(["\'])'
         match = re.search(pattern, content, re.MULTILINE)
+        badge_pattern = r'(shields\.io/badge/version-)([^-]+)(-blue\.svg)'
+        badge = re.search(badge_pattern, readme)
 
         if not match:
             raise ValueError("Could not find __version__ pattern in __init__.py")
+        if not badge or badge.group(2) != match.group(2):
+            raise ValueError("README badge and canonical package version are inconsistent")
 
         old_version = match.group(2)
         new_content = re.sub(pattern, f'{match.group(1)}{new_version}{match.group(3)}', content, flags=re.MULTILINE)
+        new_readme = re.sub(badge_pattern, rf'\g<1>{new_version}\g<3>', readme, count=1)
 
-        if dry_run:
-            print(f"Would update {self.init_file}: {old_version} -> {new_version}")
-            return True
-
-        self.init_file.write_text(new_content, encoding='utf-8')
-        print(f"Updated {self.init_file}: {old_version} -> {new_version}")
+        action = "Would update" if dry_run else "Updated"
+        if not dry_run:
+            self.init_file.write_text(new_content, encoding='utf-8')
+            self.readme_file.write_text(new_readme, encoding='utf-8')
+        print(f"{action} {self.init_file}: {old_version} -> {new_version}")
+        print(f"{action} {self.readme_file}: {old_version} -> {new_version}")
         return True
 
     def create_git_tag(self, version: str, dry_run: bool = False) -> bool:
