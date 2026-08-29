@@ -3,8 +3,8 @@
 Version Bump Utility for yylo-ledger
 
 This script automates version management for the yylo-ledger package.
-It increments major, minor, or patch versions in src/kanban/__init__.py and
-can optionally create a git tag.
+It increments major, minor, or patch versions in the canonical
+src/yylo_ledger/__init__.py identity and can optionally create a git tag.
 
 Usage:
     python scripts/bump_version.py [patch|minor|major] [--tag] [--dry-run]
@@ -46,7 +46,7 @@ class VersionBumper:
     def __init__(self, setup_file: Path):
         """Initialize with path to setup.py file."""
         self.setup_file = setup_file
-        self.init_file = setup_file.parent / 'src' / 'kanban' / '__init__.py'
+        self.init_file = setup_file.parent / 'src' / 'yylo_ledger' / '__init__.py'
         if not self.init_file.exists():
             raise FileNotFoundError(f"Init file not found: {self.init_file}")
 
@@ -99,15 +99,27 @@ class VersionBumper:
 
         return baseline_version, local_version, published_version
 
-    def parse_version(self, version: str) -> Tuple[int, int, int]:
-        """Parse version string into (major, minor, patch) tuple."""
-        try:
-            parts = version.split('.')
-            if len(parts) != 3:
-                raise ValueError()
-            return tuple(int(part) for part in parts)
-        except (ValueError, AttributeError):
-            raise ValueError(f"Invalid version format: {version}. Expected: major.minor.patch")
+    def parse_version(self, version: str) -> Tuple[int, int, int, int, int]:
+        """Parse the repository's canonical PEP 440 release identity.
+
+        The release workflow permits final versions and explicit alpha, beta,
+        or release-candidate suffixes (for example ``0.2.1rc1``).  The final
+        two tuple fields make ordinary tuple comparison preserve PEP 440
+        prerelease ordering: a < b < rc < final.
+        """
+        if not isinstance(version, str):
+            raise ValueError(f"Invalid version format: {version}. Expected: major.minor.patch[rcN]")
+        match = re.fullmatch(
+            r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+            r"(?:(a|b|rc)(0|[1-9][0-9]*))?",
+            version,
+        )
+        if not match:
+            raise ValueError(f"Invalid version format: {version}. Expected: major.minor.patch[rcN]")
+        major, minor, patch = (int(match.group(index)) for index in (1, 2, 3))
+        stage = {"a": 0, "b": 1, "rc": 2, None: 3}[match.group(4)]
+        serial = int(match.group(5)) if match.group(5) is not None else 0
+        return major, minor, patch, stage, serial
 
     def format_version(self, major: int, minor: int, patch: int) -> str:
         """Format version components into version string."""
@@ -116,7 +128,7 @@ class VersionBumper:
     def bump_version(self, bump_type: str, current_version: Optional[str] = None) -> str:
         """Bump version based on type (major, minor, patch)."""
         current = current_version or self.get_current_version()
-        major, minor, patch = self.parse_version(current)
+        major, minor, patch, _stage, _serial = self.parse_version(current)
 
         if bump_type == "major":
             major += 1
@@ -264,8 +276,8 @@ def main():
         if not args.dry_run:
             print(f"\nVersion successfully updated to {new_version}")
             print("Next steps:")
-            print("1. Review changes: git diff src/kanban/__init__.py")
-            print("2. Commit changes: git add src/kanban/__init__.py && git commit -m 'Bump version to {}'".format(new_version))
+            print("1. Review changes: git diff src/yylo_ledger/__init__.py")
+            print("2. Commit changes: git add src/yylo_ledger/__init__.py && git commit -m 'Bump version to {}'".format(new_version))
             if args.tag:
                 print("3. Push tag: git push origin v{}".format(new_version))
             print("4. Publish to PyPI: ./scripts/publish.sh")
