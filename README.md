@@ -22,7 +22,7 @@ YYLO Ledger is a Git-native, shell-friendly task manager for developers and LLM 
   <img src="./assets/yylo-ledger-git-native-task-management-infographic.png" alt="YYLO Ledger Git-native task storage, dependency logic, commands, and facts" width="960" />
 </p>
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://pypi.org/project/yylo-ledger/)
+[![Version](https://img.shields.io/badge/version-0.2.1rc1-blue.svg)](https://pypi.org/project/yylo-ledger/)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Shell](https://img.shields.io/badge/shell-friendly-green.svg)](#shell-integration)
