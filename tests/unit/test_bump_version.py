@@ -28,7 +28,7 @@ def make_bumper(tmp_path: Path, version: str) -> VersionBumper:
     setup_file = tmp_path / "setup.py"
     setup_file.write_text("# test setup file\n", encoding="utf-8")
 
-    init_file = tmp_path / "src" / "kanban" / "__init__.py"
+    init_file = tmp_path / "src" / "yylo_ledger" / "__init__.py"
     init_file.parent.mkdir(parents=True, exist_ok=True)
     init_file.write_text(f'__version__ = "{version}"\n', encoding="utf-8")
 
@@ -57,6 +57,33 @@ def test_resolve_bump_baseline_falls_back_to_local_when_pypi_unavailable(tmp_pat
     assert published is None
     assert baseline == "1.29.0"
     assert bumper.bump_version("minor", current_version=baseline) == "1.30.0"
+
+
+def test_canonical_identity_supports_release_candidates_and_updates_only_yylo_ledger(tmp_path: Path):
+    bumper = make_bumper(tmp_path, "0.2.0")
+    legacy_init = tmp_path / "src" / "kanban" / "__init__.py"
+    legacy_init.parent.mkdir(parents=True, exist_ok=True)
+    legacy_init.write_text('from yylo_ledger import __version__\n', encoding="utf-8")
+
+    assert bumper.set_version("0.2.1rc1") == "0.2.1rc1"
+    bumper.update_version_file("0.2.1rc1")
+
+    assert bumper.get_current_version() == "0.2.1rc1"
+    assert legacy_init.read_text(encoding="utf-8") == 'from yylo_ledger import __version__\n'
+
+
+def test_pep440_release_candidate_ordering_and_validation(tmp_path: Path):
+    bumper = make_bumper(tmp_path, "0.2.1rc1")
+
+    assert bumper.parse_version("0.2.1rc1") < bumper.parse_version("0.2.1rc2")
+    assert bumper.parse_version("0.2.1rc2") < bumper.parse_version("0.2.1")
+    for invalid in ("0.2.1-rc.1", "0.2.1rc01", "0.2", "v0.2.1rc1"):
+        try:
+            bumper.parse_version(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"accepted invalid version: {invalid}")
 
 
 def test_get_latest_published_version_returns_none_for_invalid_pypi_version(tmp_path: Path):
