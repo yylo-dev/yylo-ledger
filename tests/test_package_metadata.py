@@ -4,6 +4,7 @@ from __future__ import annotations
 import configparser
 import email
 import io
+import re
 import shutil
 import subprocess
 import sys
@@ -18,7 +19,12 @@ pytest.importorskip("wheel", reason="wheel is required for the package release g
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "0.2.0"
+VERSION_SOURCE = (ROOT / "src" / "yylo_ledger" / "__init__.py").read_text(encoding="utf-8")
+VERSION_MATCH = re.search(
+    r'^__version__\s*=\s*["\']([^"\']+)["\']', VERSION_SOURCE, re.MULTILINE
+)
+assert VERSION_MATCH is not None
+EXPECTED_VERSION = VERSION_MATCH.group(1)
 EXPECTED_CONSOLE_SCRIPTS = {
     "yylo-ledger": "yylo_ledger.cli:main",
     "juno-ledger": "yylo_ledger.cli:legacy_main",

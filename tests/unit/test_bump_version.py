@@ -27,6 +27,10 @@ VersionBumper = bump_version_script.VersionBumper
 def make_bumper(tmp_path: Path, version: str) -> VersionBumper:
     setup_file = tmp_path / "setup.py"
     setup_file.write_text("# test setup file\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        f"[![Version](https://img.shields.io/badge/version-{version}-blue.svg)](https://pypi.org/project/yylo-ledger/)\n",
+        encoding="utf-8",
+    )
 
     init_file = tmp_path / "src" / "yylo_ledger" / "__init__.py"
     init_file.parent.mkdir(parents=True, exist_ok=True)
@@ -69,6 +73,7 @@ def test_canonical_identity_supports_release_candidates_and_updates_only_yylo_le
     bumper.update_version_file("0.2.1rc1")
 
     assert bumper.get_current_version() == "0.2.1rc1"
+    assert "version-0.2.1rc1-blue.svg" in (tmp_path / "README.md").read_text(encoding="utf-8")
     assert legacy_init.read_text(encoding="utf-8") == 'from yylo_ledger import __version__\n'
 
 
