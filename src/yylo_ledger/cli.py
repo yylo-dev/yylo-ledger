@@ -31,6 +31,7 @@ from .project_registry import (
 from .archive import (DEFAULT_HARD_MAX_BYTES, DEFAULT_MAX_RECORDS,
                       DEFAULT_TARGET_BYTES, archive_doctor, create_archive, plan_archive)
 from .record_cli import RecordCLI, TYPED_GROUPS, add_record_parsers
+from .migration_cli import MigrationCLI, add_migration_parser
 from . import __version__
 
 
@@ -280,6 +281,7 @@ class TaskCLI:
         # Native Record v2 groups. Flat commands below remain the explicit
         # legacy task compatibility surface; they are not silently reinterpreted.
         add_record_parsers(subparsers)
+        add_migration_parser(subparsers)
 
         host_parser = subparsers.add_parser(
             'host', help='Serve bounded read-only Record projections', allow_abbrev=False)
@@ -3051,6 +3053,7 @@ end
         print("COMMANDS:")
         print(f"  {cn} record|task|wiki|workflow|artifact ACTION ...      Native ID-first Record API v2 (no remove)")
         print(f"      ACTION: create|list|search|get|update|history|archive (where profile permits)")
+        print(f"  {cn} migration inventory|plan|apply|status|verify ...    Copy legacy files into Records; never delete sources")
         print(f"      Flat task commands below are the versioned legacy v1 compatibility surface")
         print(f"  {cn} --project ALIAS COMMAND ...                       Route through an allowed destination wrapper")
         print(f"  {cn} project add ALIAS --path PATH [--replace]          Register an initialized project")
@@ -3294,7 +3297,7 @@ end
 
             if args_to_parse and len(args_to_parse) > 0 and not args_to_parse[0].startswith('-'):
                 # Check if first argument is not a known command
-                known_commands = ['record', *TYPED_GROUPS, 'host', 'project', 'create', 'search', 'get', 'show', 'update', 'list', 'archive', 'archive-pack', 'archive-search', 'mark', 'umbrella-finalize', 'merge', 'deps', 'ready', 'order', 'tags', 'history', 'reconcile', 'doctor', 'cache', 'convert', 'compatibility', 'export-legacy', 'rollback', 'completion', '__complete']
+                known_commands = ['record', *TYPED_GROUPS, 'migration', 'host', 'project', 'create', 'search', 'get', 'show', 'update', 'list', 'archive', 'archive-pack', 'archive-search', 'mark', 'umbrella-finalize', 'merge', 'deps', 'ready', 'order', 'tags', 'history', 'reconcile', 'doctor', 'cache', 'convert', 'compatibility', 'export-legacy', 'rollback', 'completion', '__complete']
                 if args_to_parse[0] not in known_commands:
                     # Treat as shortcut: yylo-ledger "task body" -> yylo-ledger create "task body"
                     args_to_parse = ['create'] + args_to_parse
@@ -3354,6 +3357,9 @@ end
 
             elif parsed_args.command == 'record' or parsed_args.command in TYPED_GROUPS:
                 return RecordCLI(self).run(parsed_args)
+
+            elif parsed_args.command == 'migration':
+                return MigrationCLI(self).run(parsed_args)
 
             elif parsed_args.command == 'create':
                 return self.cmd_create(parsed_args)

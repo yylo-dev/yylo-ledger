@@ -38,6 +38,7 @@ _SECRET_PATTERNS = (
 )
 _PROVENANCE_FIELDS = ("actor", "actor_type", "agent", "model", "session_id", "run_id",
                       "invocation_id", "task_id", "workflow_id")
+_MIGRATION_FIELDS = {"schema_version", "plan_sha256", "source_path", "source_sha256"}
 
 
 @dataclass(frozen=True)
@@ -121,6 +122,25 @@ def validate_retention(retention: Optional[Mapping[str, Any]]) -> Dict[str, Any]
         except ValueError as exc:
             raise RecordError("ARTIFACT_RETENTION_INVALID", "retain_until must be an RFC 3339 string") from exc
     return result
+
+
+def _validate_migration_metadata(metadata: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Validate the narrow, Ledger-owned source binding used by migration."""
+    if metadata is None:
+        return None
+    if not isinstance(metadata, Mapping) or set(metadata) != _MIGRATION_FIELDS:
+        raise RecordError("MIGRATION_METADATA_INVALID", "migration metadata has an unsupported shape")
+    if metadata.get("schema_version") != 1:
+        raise RecordError("MIGRATION_METADATA_INVALID", "unsupported migration metadata schema")
+    for key in ("plan_sha256", "source_sha256"):
+        value = metadata.get(key)
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise RecordError("MIGRATION_METADATA_INVALID", f"{key} must be a SHA-256 digest")
+    path = metadata.get("source_path")
+    if (not isinstance(path, str) or not path or path.startswith("/")
+            or ".." in path.split("/") or "\x00" in path):
+        raise RecordError("MIGRATION_METADATA_INVALID", "source_path must be a safe relative path")
+    return dict(metadata)
 
 
 class ArtifactStore:
@@ -233,13 +253,17 @@ class ArtifactStore:
 
     def _record(self, *, record_id: str, title: str, profile: str, payload: Mapping[str, Any],
                 revision: int, created_date: str, provenance: Mapping[str, str],
-                retention: Mapping[str, Any], predecessor_id: Optional[str] = None) -> Dict[str, Any]:
+                retention: Mapping[str, Any], predecessor_id: Optional[str] = None,
+                migration_metadata: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
         now = _timestamp()
         system: Dict[str, Any] = {"artifact": {"payload_mode": payload["backend"],
                                                 "durable_evidence": bool(payload["immutable_bytes"]),
                                                 "retention": dict(retention)}}
         if provenance:
             system["provenance"] = dict(provenance)
+        migration = _validate_migration_metadata(migration_metadata)
+        if migration is not None:
+            system["migration"] = migration
         relations = []
         if predecessor_id:
             relations.append({"type": "supersedes", "record_id": predecessor_id})
@@ -258,6 +282,7 @@ class ArtifactStore:
                provenance: Optional[Mapping[str, Any]] = None,
                retention: Optional[Mapping[str, Any]] = None,
                predecessor_id: Optional[str] = None,
+               migration_metadata: Optional[Mapping[str, Any]] = None,
                required_git_roles=()) -> Dict[str, Any]:
         self._validate_id(record_id)
         if not isinstance(title, str) or not title.strip():
@@ -304,7 +329,8 @@ class ArtifactStore:
             created = _timestamp()
             record = self._record(record_id=record_id, title=title, profile=profile, payload=payload,
                                   revision=1, created_date=created, provenance=provenance_value,
-                                  retention=retention_value, predecessor_id=predecessor_id)
+                                  retention=retention_value, predecessor_id=predecessor_id,
+                                  migration_metadata=migration_metadata)
             context = capture_creation_context(
                 controller_root=self.controller_root, project_root=self.project_root,
                 required_roles=required_git_roles, repository_ids=self.repository_ids)

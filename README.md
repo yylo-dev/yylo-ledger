@@ -7,7 +7,7 @@ YYLO Ledger is a Git-native task and Record store with a shell-friendly CLI. It 
 - Python import: `yylo_ledger`
 - Source: [yylo-dev/yylo-ledger](https://github.com/yylo-dev/yylo-ledger)
 
-[![Source version](https://img.shields.io/badge/version-0.2.1rc1-blue.svg)](https://pypi.org/project/yylo-ledger/)
+[![Source version](https://img.shields.io/badge/version-0.2.1rc2-blue.svg)](https://pypi.org/project/yylo-ledger/)
 
 The badge identifies this source checkout; the stable and prerelease install channels are separated below.
 
@@ -38,11 +38,11 @@ A successful run prints `yylo-ledger 0.2.0`, creates a six-character task ID, sh
 `0.2.0` is the stable PyPI release. Install the current release candidate only when you intentionally want prerelease behavior:
 
 ```bash
-python -m pip install 'yylo-ledger==0.2.1rc1'
+python -m pip install 'yylo-ledger==0.2.1rc2'
 yylo-ledger --version
 ```
 
-The `0.2.1rc1` source/tag is a prerelease; it is not the stable install. Pin exact versions in automation.
+The `0.2.1rc2` source/tag is a prerelease; it is not the stable install. Pin exact versions in automation.
 
 Next: [manage tasks](#task-workflow), [use native Records](#native-records), or read the [storage contract](docs/git-native-storage.md).
 
@@ -53,6 +53,7 @@ Next: [manage tasks](#task-workflow), [use native Records](#native-records), or 
 | Task work | `create`, `list`, `search`, `get`, `update`, `mark`, `archive`, `tags` | Archive is a status transition; there is no destructive task delete command. |
 | Dependencies | `deps`, `ready`, `order` | Cycles and invalid terminal transitions fail before task/ledger writes. |
 | Native Records | `record`, `task`, `wiki`, `workflow`, `artifact` | Profile rules determine allowed actions; there is no Record `remove`. |
+| Legacy-file migration | `migration inventory|plan|apply|status|verify` | Copy-only, plan-bound, per-item status; source deletion is never performed. |
 | History | `history ID`; native profile history | Current state and append-only history are separate canonical artifacts. |
 | Cold records | `archive-search`, `archive-pack plan|create|doctor` | Normal discovery is hot-only. Pack creation is explicit, revision-bound maintenance. |
 | Local reads | `host` | Read-only; loopback by default; no write, workflow-execution, or remote-fetch API. |
@@ -143,6 +144,31 @@ yylo-ledger record search --help
 ```
 
 Broad search is bounded by record count and rendered bytes. Choose `--scope hot|archive|all` and `--projection metadata|summary|full` deliberately. Summary output omits payload bytes, and sensitive Records expose only safe identity metadata. Full output is an audited opt-in, not the default.
+
+### Copy legacy wikis and artifacts into Records
+
+Migration is preservation-first: inventory and plan receipts are fresh files outside the source root, `apply` requires an explicit Record ID or `--all`, status is saved before and after every item, and neither apply nor verify removes a source file. Wiki/workflow roots are bounded extension-based scans; Artifact inputs are explicit declarations with a closed profile and payload mode.
+
+```bash
+cat > /external/receipts/declarations.json <<'JSON'
+[
+  {"kind":"artifact","path":"reports/run.json","profile":"report","mode":"local","media_type":"application/json"}
+]
+JSON
+yylo-ledger migration inventory --source-root /project \
+  --wiki-root .juno_task/wiki --declarations /external/receipts/declarations.json \
+  --output /external/receipts/inventory.json
+yylo-ledger migration plan --source-root /project \
+  --inventory /external/receipts/inventory.json --output /external/receipts/plan.json
+yylo-ledger migration apply --source-root /project --plan /external/receipts/plan.json \
+  --status-file /external/receipts/status.json --id RECORD_ID
+yylo-ledger migration status --source-root /project --plan /external/receipts/plan.json \
+  --status-file /external/receipts/status.json
+yylo-ledger migration verify --source-root /project --plan /external/receipts/plan.json \
+  --status-file /external/receipts/status.json
+```
+
+The immutable plan contains source path, mode, size, SHA-256, tracked Git blob (when available), assigned Record ID, profile, namespace, retention, sensitivity, relations, runtime, source HEAD, and destination binding. Exact retries reuse only Records carrying matching migration source metadata. Source, runtime, plan, status, or destination drift fails closed. Secret-like names, symlinks, runtime/log/cache/object roots, duplicate declarations, non-UTF-8 Documents, and CRLF Document payloads are rejected.
 
 ## Current state, history, and archive boundaries
 
