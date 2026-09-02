@@ -7,7 +7,7 @@ YYLO Ledger is a Git-native task and Record store with a shell-friendly CLI. It 
 - Python import: `yylo_ledger`
 - Source: [yylo-dev/yylo-ledger](https://github.com/yylo-dev/yylo-ledger)
 
-[![Source version](https://img.shields.io/badge/version-0.2.1rc4-blue.svg)](https://pypi.org/project/yylo-ledger/)
+[![Source version](https://img.shields.io/badge/version-0.2.1rc5-blue.svg)](https://pypi.org/project/yylo-ledger/)
 
 The badge identifies this source checkout; the stable and prerelease install channels are separated below.
 
@@ -38,11 +38,11 @@ A successful run prints `yylo-ledger 0.2.0`, creates a six-character task ID, sh
 `0.2.0` is the stable PyPI release. Install the current release candidate only when you intentionally want prerelease behavior:
 
 ```bash
-python -m pip install 'yylo-ledger==0.2.1rc4'
+python -m pip install 'yylo-ledger==0.2.1rc5'
 yylo-ledger --version
 ```
 
-The `0.2.1rc4` source/tag is a prerelease; it is not the stable install. Pin exact versions in automation.
+The `0.2.1rc5` source/tag is a prerelease; it is not the stable install. Pin exact versions in automation.
 
 Next: [manage tasks](#task-workflow), [use native Records](#native-records), or read the [storage contract](docs/git-native-storage.md).
 

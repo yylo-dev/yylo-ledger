@@ -19,7 +19,7 @@ License: MIT
 from .identity import migrate_environment
 migrate_environment()
 
-__version__ = "0.2.1rc4"
+__version__ = "0.2.1rc5"
 __author__ = "JUNO AI INC."
 
 # Export main classes for easy importing
