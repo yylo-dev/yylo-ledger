@@ -156,6 +156,23 @@ class DependencyGraph:
         """
         return sorted(self._forward.get(task_id, set()))
 
+    def _active_blockers(self, task_id: str) -> Set[str]:
+        """Return blockers that still constrain ``task_id`` execution.
+
+        Completed tasks need no further ordering, and completed blockers already
+        satisfy their dependency edge. Missing blockers remain active so a
+        broken dependency cannot be silently treated as ready.
+        """
+        task = self._tasks.get(task_id)
+        if not task or task.get('status') in _RESOLVED_STATUSES:
+            return set()
+        return {
+            blocker_id
+            for blocker_id in self._reverse.get(task_id, set())
+            if (blocker_id not in self._tasks
+                or self._tasks[blocker_id].get('status') not in _RESOLVED_STATUSES)
+        }
+
     def topological_sort(self) -> List[str]:
         """
         Execution order respecting all dependencies (Kahn's algorithm, BFS).
@@ -167,14 +184,20 @@ class DependencyGraph:
             List of task IDs in topological order.
 
         Raises:
-            ValueError: If the graph contains a cycle (should not happen if
-                        cycle detection is used on writes).
+            ValueError: If the graph contains a cycle or an unresolved missing
+                        blocker. Cycles should not occur when writes validate edges.
         """
-        # Compute in-degree for each node (only counting edges within the graph)
-        in_degree: Dict[str, int] = {tid: 0 for tid in self._tasks}
-        for task_id, blockers in self._reverse.items():
-            if task_id in in_degree:
-                in_degree[task_id] = len(blockers)
+        # Count only dependencies that remain unresolved. Resolved done/archive
+        # blockers retain their historical edge but no longer constrain execution.
+        # Missing blockers remain counted and are classified explicitly below.
+        active_blockers = {
+            task_id: self._active_blockers(task_id)
+            for task_id in self._tasks
+        }
+        in_degree: Dict[str, int] = {
+            task_id: len(blockers)
+            for task_id, blockers in active_blockers.items()
+        }
 
         # Start with nodes that have no blockers (in-degree 0)
         queue = deque(sorted(tid for tid, deg in in_degree.items() if deg == 0))
@@ -187,7 +210,7 @@ class DependencyGraph:
             # Reduce in-degree for all dependents
             next_batch = []
             for dependent in self._forward.get(node, set()):
-                if dependent in in_degree:
+                if dependent in in_degree and node in active_blockers[dependent]:
                     in_degree[dependent] -= 1
                     if in_degree[dependent] == 0:
                         next_batch.append(dependent)
@@ -197,8 +220,19 @@ class DependencyGraph:
                 queue.append(dep)
 
         if len(result) != len(self._tasks):
-            # Some tasks weren't reached — cycle exists
             remaining = set(self._tasks.keys()) - set(result)
+            missing = {
+                task_id: sorted(
+                    blocker_id for blocker_id in active_blockers[task_id]
+                    if blocker_id not in self._tasks
+                )
+                for task_id in sorted(remaining)
+            }
+            missing = {task_id: blockers for task_id, blockers in missing.items() if blockers}
+            if missing:
+                raise ValueError(
+                    f"Unresolved dependencies detected. Missing blockers: {missing}"
+                )
             raise ValueError(
                 f"Dependency cycle detected. Tasks involved: {sorted(remaining)}"
             )
@@ -328,6 +362,8 @@ class DependencyGraph:
 
         for node in order:
             for dependent in self._forward.get(node, set()):
+                if node not in self._active_blockers(dependent):
+                    continue
                 if dp[node] + 1 > dp[dependent]:
                     dp[dependent] = dp[node] + 1
                     parent[dependent] = node

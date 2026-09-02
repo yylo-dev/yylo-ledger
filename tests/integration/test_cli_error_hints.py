@@ -1800,3 +1800,38 @@ Trailing space follows:'''
         assert result == ExitCode.IO_ERROR
         assert 'file not found' in stderr.getvalue()
         assert str(missing_path) in stderr.getvalue()
+
+
+class TestOrderDependencyClassification:
+    """The user-visible order command distinguishes satisfied and broken edges."""
+
+    def test_order_omits_resolved_blocker_and_orders_open_dependents(self, kanban_env):
+        config_path, _, storage = kanban_env
+        storage.create_task(id='Aaaa01', body='resolved', status='done')
+        storage.create_task(
+            id='Bbbb02', body='first open', status='todo', blocked_by=['Aaaa01']
+        )
+        storage.create_task(
+            id='Cccc03', body='second open', status='todo', blocked_by=['Bbbb02']
+        )
+
+        stdout = io.StringIO()
+        with patch('sys.stdout', stdout), patch('sys.stderr', io.StringIO()):
+            result = TaskCLI().run(['-c', config_path, '--raw', 'order', '-f', 'json'])
+
+        assert result == ExitCode.SUCCESS
+        assert [task['id'] for task in json.loads(stdout.getvalue())] == ['Bbbb02', 'Cccc03']
+
+    def test_order_reports_missing_blocker_without_calling_it_a_cycle(self, kanban_env):
+        config_path, _, storage = kanban_env
+        storage.create_task(
+            id='Aaaa01', body='broken dependency', status='todo', blocked_by=['Xxxx99']
+        )
+
+        stderr = io.StringIO()
+        with patch('sys.stdout', io.StringIO()), patch('sys.stderr', stderr):
+            result = TaskCLI().run(['-c', config_path, 'order'])
+
+        assert result == ExitCode.GENERAL_ERROR
+        assert 'Missing blockers' in stderr.getvalue()
+        assert 'cycle' not in stderr.getvalue().lower()

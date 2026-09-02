@@ -2613,7 +2613,11 @@ class TaskCLI:
                 print("No open tasks to order")
                 return ExitCode.SUCCESS
 
-            graph = DependencyGraph(open_tasks)
+            # Include resolved tasks so the graph can distinguish satisfied
+            # historical edges from genuinely missing dependencies. Only open
+            # tasks are projected to the user below.
+            graph = DependencyGraph(all_tasks)
+            score_graph = DependencyGraph(open_tasks)
 
             try:
                 order = graph.topological_sort()
@@ -2625,12 +2629,15 @@ class TaskCLI:
 
             # Build result list in topological order
             results = []
+            open_task_ids = {task['id'] for task in open_tasks}
             for task_id in order:
+                if task_id not in open_task_ids:
+                    continue
                 task = self.search.search_by_id(task_id)
                 if task:
                     if include_scores:
                         task_copy = task.copy()
-                        task_copy['_priority_score'] = graph.get_priority_score(task_id)
+                        task_copy['_priority_score'] = score_graph.get_priority_score(task_id)
                         results.append(task_copy)
                     else:
                         results.append(task)

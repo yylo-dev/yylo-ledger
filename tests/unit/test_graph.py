@@ -321,6 +321,22 @@ class TestTopologicalSort:
         g = DependencyGraph([_task('Aaaaaa')])
         assert g.topological_sort() == ['Aaaaaa']
 
+    @pytest.mark.parametrize('resolved_status', ['done', 'archive'])
+    def test_resolved_blocker_does_not_contribute_in_degree(self, resolved_status):
+        tasks = [
+            _task('Aaaaaa', status=resolved_status),
+            _task('Bbbbbb', blocked_by=['Aaaaaa']),
+            _task('Cccccc', blocked_by=['Bbbbbb']),
+        ]
+        order = DependencyGraph(tasks).topological_sort()
+        assert order.index('Bbbbbb') < order.index('Cccccc')
+
+    def test_missing_blocker_is_not_reported_as_cycle(self):
+        graph = DependencyGraph([_task('Aaaaaa', blocked_by=['XXXXXX'])])
+        with pytest.raises(ValueError, match='Unresolved dependencies.*Missing blockers') as error:
+            graph.topological_sort()
+        assert 'cycle' not in str(error.value).lower()
+
 
 # ---------------------------------------------------------------------------
 # Cycle detection
