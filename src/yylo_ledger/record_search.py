@@ -189,10 +189,18 @@ class RecordSearchIndex:
     """Rebuildable unified Record index with canonical verification."""
 
     def __init__(self, path: Path, *, policy: Optional[RecordSearchPolicy] = None,
-                 record_source: Optional[Callable[[], Iterable[IndexedRecord]]] = None):
+                 record_source: Optional[Callable[[], Iterable[IndexedRecord]]] = None,
+                 source_revision: Optional[str] = None):
         self.path = Path(path)
         self.policy = policy or RecordSearchPolicy()
         self.record_source = record_source
+        self.source_revision = source_revision
+        policy_values = {
+            "custom_metadata_paths": sorted(self.policy.custom_metadata_paths),
+            "max_indexed_text_bytes": self.policy.max_indexed_text_bytes,
+        }
+        self.policy_revision = hashlib.sha256(json.dumps(
+            policy_values, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path)
@@ -296,8 +304,13 @@ class RecordSearchIndex:
                             _approved_text(record, self.policy.max_indexed_text_bytes)))
                 digests.append((record_id, canonical_sha))
             revision = hashlib.sha256(json.dumps(sorted(digests), separators=(",", ":")).encode()).hexdigest()
-            db.executemany("INSERT INTO metadata VALUES (?,?)", (("schema_version", str(RECORD_SEARCH_SCHEMA)),
-                           ("revision", revision), ("cursor_secret", cursor_secret or secrets.token_hex(32))))
+            metadata_rows = [("schema_version", str(RECORD_SEARCH_SCHEMA)),
+                             ("revision", revision),
+                             ("cursor_secret", cursor_secret or secrets.token_hex(32)),
+                             ("policy_revision", self.policy_revision)]
+            if self.source_revision is not None:
+                metadata_rows.append(("source_revision", self.source_revision))
+            db.executemany("INSERT INTO metadata VALUES (?,?)", metadata_rows)
             db.commit()
         except BaseException:
             db.close(); temporary.unlink(missing_ok=True)
@@ -312,7 +325,13 @@ class RecordSearchIndex:
             if not self.path.exists():
                 raise RecordError("SEARCH_INDEX_MISSING", "disposable index is missing")
             with self._connect() as db:
-                return self._metadata(db)["revision"]
+                metadata = self._metadata(db)
+                if metadata.get("policy_revision") != self.policy_revision:
+                    raise RecordError("SEARCH_INDEX_STALE", "search indexing policy changed")
+                if (self.source_revision is not None
+                        and metadata.get("source_revision") != self.source_revision):
+                    raise RecordError("SEARCH_INDEX_STALE", "canonical Record collection changed")
+                return metadata["revision"]
         except (RecordError, sqlite3.DatabaseError):
             if self.record_source is None:
                 raise RecordError("SEARCH_INDEX_MISSING", "disposable index must be rebuilt from canonical storage")

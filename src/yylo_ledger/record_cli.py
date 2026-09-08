@@ -7,6 +7,7 @@ their profile engines.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import re
@@ -327,23 +328,58 @@ class RecordCLI:
     def _sources(self) -> list[IndexedRecord]:
         result: list[IndexedRecord] = []
         cold_ids = set()
+        self._archive_search_records = {}
         for envelope in iter_archive_envelopes(self.root):
             record = envelope["task"]
             cold_ids.add(record["id"])
-            result.append(IndexedRecord(record, tier="archive", locator=record["id"]))
+            self._archive_search_records[record["id"]] = record
+            result.append(IndexedRecord(record, tier="archive", locator="archive:" + record["id"]))
         for path in sorted(self.tasks.tasks_root.glob("*/*.md")):
             task = self.tasks._read_path(path)
-            result.append(IndexedRecord(task_record_projection(task), locator=task["id"]))
-        for store in (self.documents, self.artifacts):
+            result.append(IndexedRecord(task_record_projection(task), locator="task:" + task["id"]))
+        for store, kind in ((self.documents, "document"), (self.artifacts, "artifact")):
             for directory in sorted(store.records_root.glob("*/*")):
                 paths = sorted(directory.glob("*.json"))
                 if paths and directory.name not in cold_ids:
                     record = json.loads(paths[-1].read_text(encoding="utf-8"))
-                    result.append(IndexedRecord(record, locator=record["id"]))
+                    result.append(IndexedRecord(record, locator=kind + ":" + record["id"]))
         return result
 
+    def _source_revision(self) -> str:
+        """Cheaply invalidate the disposable index without reading Artifact payload objects."""
+        paths = list(self.tasks.tasks_root.glob("*/*.md"))
+        for root in (self.documents.records_root, self.artifacts.records_root, self.root / "archive"):
+            if root.is_dir():
+                paths.extend(path for path in root.rglob("*") if path.is_file())
+        state = []
+        for path in sorted(paths):
+            stat = path.stat()
+            state.append((str(path.relative_to(self.root)), stat.st_size, stat.st_mtime_ns))
+        return hashlib.sha256(json.dumps(state, separators=(",", ":")).encode()).hexdigest()
+
     def _canonical(self, tier: str, locator: str, record_id: str) -> Mapping[str, Any]:
-        _, record = self._resolve(record_id)
+        source_kind, separator, locator_id = locator.partition(":")
+        if not separator or locator_id != record_id:
+            raise RecordError("SEARCH_INDEX_STALE", "candidate locator differs from its immutable ID")
+        if tier == "archive":
+            records = getattr(self, "_archive_search_records", None)
+            if records is None:
+                records = {item["task"]["id"]: item["task"] for item in iter_archive_envelopes(self.root)}
+                self._archive_search_records = records
+            record = records.get(record_id)
+            if record is None:
+                raise RecordError("SEARCH_INDEX_STALE", "archived candidate is no longer canonical")
+        elif source_kind == "task":
+            task = self.tasks.find_task(record_id)
+            if task is None:
+                raise RecordError("SEARCH_INDEX_STALE", "task candidate is no longer canonical")
+            record = task_record_projection(task)
+        elif source_kind == "document":
+            record = self.documents.get(record_id)
+        elif source_kind == "artifact":
+            record = self.artifacts.get(record_id)
+        else:
+            raise RecordError("SEARCH_INDEX_STALE", "candidate locator has an unknown Record kind")
         value = dict(record)
         value["tier"] = tier
         return value
@@ -355,8 +391,9 @@ class RecordCLI:
             "custom_metadata_paths", [])
         policy = RecordSearchPolicy(custom_metadata_paths=frozenset(configured_paths),
                                     max_output_bytes=1024 * 1024)
-        index = RecordSearchIndex(self.root / "cache" / "records-v2.sqlite3", policy=policy)
-        index.rebuild(self._sources())
+        index = RecordSearchIndex(self.root / "cache" / "records-v2.sqlite3", policy=policy,
+                                  record_source=self._sources,
+                                  source_revision=self._source_revision())
         fields = tuple(part.strip() for part in (args.fields or "").split(",") if part.strip())
         page = index.search(RecordSearchQuery(
             scope=args.scope, ids=args.ids, slug=args.slug,

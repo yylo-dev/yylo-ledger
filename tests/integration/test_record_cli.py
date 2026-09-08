@@ -1,9 +1,11 @@
 """Focused subprocess-style contracts for native Record command groups."""
 import io
 import json
+import time
 from pathlib import Path
 from unittest.mock import patch
 
+from yylo_ledger.artifacts import ArtifactStore
 from yylo_ledger.cli import ExitCode, TaskCLI
 
 
@@ -53,6 +55,39 @@ def test_generic_and_typed_search_return_same_ids_and_no_remove_completion(tmp_p
     assert code == 0 and "create" in output.splitlines() and "remove" not in output.splitlines()
     code, output, _ = run_cli(["__complete", "--index", "3", "--", "yylo-ledger", "wiki", "update", "--exp"])
     assert code == 0 and "--expected-revision" in output.splitlines()
+
+
+def test_local_artifact_metadata_search_is_bounded_cached_and_paginated(tmp_path, monkeypatch):
+    monkeypatch.setenv("JUNO_TASK_ROOT", str(tmp_path))
+    store = ArtifactStore(tmp_path / ".juno_task")
+    for index in range(124):
+        content = ((f"synthetic report {index:05d}\n").encode() * 900)[:20_000]
+        store.create(record_id=f"A{index:05d}", title=f"Report {index:05d}", profile="report",
+                     mode="local", content=content, media_type="text/plain")
+
+    started = time.monotonic()
+    code, output, error = run_cli(["record", "search", "--scope", "all", "--kind", "artifact",
+                                   "--projection", "metadata", "--limit", "100", "--format", "json"])
+    first = json.loads(output)
+    assert code == ExitCode.SUCCESS, error
+    assert len(first["records"]) == 100
+    assert first["next_cursor"]
+    cache = tmp_path / ".juno_task" / "cache" / "records-v2.sqlite3"
+    first_cache_mtime = cache.stat().st_mtime_ns
+
+    typed = json.loads(run_cli(["artifact", "search", "--scope", "all", "--projection", "metadata",
+                                "--limit", "100", "--format", "json"])[1])
+    assert [item["id"] for item in typed["records"]] == [item["id"] for item in first["records"]]
+    code, output, error = run_cli(["record", "search", "--scope", "all", "--kind", "artifact",
+                                   "--projection", "metadata", "--limit", "100",
+                                   "--cursor", first["next_cursor"], "--format", "json"])
+    second = json.loads(output)
+    assert code == ExitCode.SUCCESS, error
+    assert len(second["records"]) == 24
+    assert not ({item["id"] for item in first["records"]}
+                & {item["id"] for item in second["records"]})
+    assert cache.stat().st_mtime_ns == first_cache_mtime
+    assert time.monotonic() - started < 5
 
 
 def test_workflow_validation_and_artifact_stdin_bytes(tmp_path, monkeypatch):
