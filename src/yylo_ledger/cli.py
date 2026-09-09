@@ -32,7 +32,7 @@ from .archive import (DEFAULT_HARD_MAX_BYTES, DEFAULT_MAX_RECORDS,
                       DEFAULT_TARGET_BYTES, archive_doctor, create_archive, plan_archive)
 from .record_cli import RecordCLI, TYPED_GROUPS, add_record_parsers
 from .migration_cli import MigrationCLI, add_migration_parser
-from .skills import SkillInstallError, install as install_skill, status as skill_status
+from .skills import SKILLS, SkillInstallError, install as install_skill, status as skill_status
 from . import __version__
 
 
@@ -260,19 +260,19 @@ class TaskCLI:
         )
 
         skills_parser = subparsers.add_parser(
-            'skills', help='Install or inspect the remote YYLO Kanban skill', allow_abbrev=False)
+            'skills', help='Install or inspect the remote YYLO Ledger skills', allow_abbrev=False)
         skills_subparsers = skills_parser.add_subparsers(
             dest='skills_command', required=True, metavar='ACTION')
         for action in ('install', 'update'):
             action_parser = skills_subparsers.add_parser(
-                action, help='{} kanban-workflow from yylo-dev/yylo-skills'.format(action.title()),
+                action, help='{} the four Ledger skills from yylo-dev/yylo-skills'.format(action.title()),
                 allow_abbrev=False)
             action_parser.add_argument('--version', dest='skill_version',
                                        help='Exact stable version (default: latest stable)')
             action_parser.add_argument('--force', action='store_true',
-                                       help='Replace differing kanban-workflow files only')
+                                       help='Replace differing canonical Ledger skill files only')
         skills_subparsers.add_parser('status', help='Inspect the local install record', allow_abbrev=False)
-        skills_subparsers.add_parser('list', help='List the locally supported skill', allow_abbrev=False)
+        skills_subparsers.add_parser('list', help='List the locally supported skills', allow_abbrev=False)
 
         # PROJECT registry management (does not initialize local task storage)
         project_parser = subparsers.add_parser(
@@ -3350,7 +3350,7 @@ end
                     if parsed_args.skills_command in ('install', 'update'):
                         payload = install_skill(Path.cwd(), parsed_args.skill_version, parsed_args.force)
                     elif parsed_args.skills_command == 'list':
-                        payload = {'skills': ['kanban-workflow'], 'source': 'yylo-dev/yylo-skills'}
+                        payload = {'skills': list(SKILLS), 'source': 'yylo-dev/yylo-skills'}
                     else:
                         payload = skill_status(Path.cwd())
                     print(json.dumps(payload, sort_keys=True))

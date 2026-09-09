@@ -94,3 +94,16 @@ def test_direct_and_sdist_derived_wheels_keep_runtime_dependency(tmp_path: Path)
     assert wheel_console_scripts(derived) == EXPECTED_CONSOLE_SCRIPTS
     assert wheel_version(direct) == EXPECTED_VERSION
     assert wheel_version(derived) == EXPECTED_VERSION
+
+    canonical_slugs = {
+        "artifact-yylo", "ledger-tasks-yylo", "wiki-yylo", "workflow-yylo",
+    }
+    with zipfile.ZipFile(direct) as bundle:
+        direct_names = bundle.namelist()
+    with zipfile.ZipFile(derived) as bundle:
+        derived_names = bundle.namelist()
+    with tarfile.open(archive) as bundle:
+        sdist_names = bundle.getnames()
+    for names in (direct_names, derived_names, sdist_names):
+        assert not any(name.endswith("/SKILL.md") for name in names)
+        assert not any(slug in name for slug in canonical_slugs for name in names)
