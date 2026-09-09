@@ -20,10 +20,11 @@ def write_skill(root: Path, body: str = "canonical"):
 
 
 class FakeRunner:
-    def __init__(self, npx=True, git=True, body="canonical"):
+    def __init__(self, npx=True, git=True, body="canonical", npx_extra=False):
         self.npx = npx
         self.git = git
         self.body = body
+        self.npx_extra = npx_extra
         self.calls = []
 
     def __call__(self, argv, cwd=None):
@@ -37,6 +38,8 @@ class FakeRunner:
                 raise FileNotFoundError("npx")
             for destination in DESTINATIONS:
                 write_skill(Path(cwd) / destination, self.body)
+                if self.npx_extra:
+                    write_skill(Path(cwd) / destination.parent / "unexpected", "extra")
             return completed(argv)
         if argv[:2] == ["git", "clone"]:
             if not self.git:
@@ -69,6 +72,12 @@ def test_clone_is_used_only_after_npx_failure(tmp_path):
     result = install(tmp_path, "v1.0.0", runner=runner)
     assert result["acquisition"] == "git"
     assert [call[0][0] for call in runner.calls] == ["git", "npx", "git"]
+
+
+def test_non_targeted_npx_result_is_rejected_and_falls_back(tmp_path):
+    result = install(tmp_path, "1.0.0", runner=FakeRunner(npx_extra=True))
+    assert result["acquisition"] == "git"
+    assert not list(tmp_path.rglob("unexpected"))
 
 
 def test_total_acquisition_failure_leaves_project_unchanged(tmp_path):

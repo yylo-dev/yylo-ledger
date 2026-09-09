@@ -104,6 +104,9 @@ def _validate_stage(stage: Path) -> Dict[Path, str]:
     values = {}
     for relative in DESTINATIONS:
         root = stage / relative
+        entries = sorted(path.name for path in root.parent.iterdir()) if root.parent.is_dir() else []
+        if entries != [SKILL]:
+            raise SkillInstallError("staged agent destination is not the kanban-only skill set")
         values[relative] = _digest(root)
     if len(set(values.values())) != 1:
         raise SkillInstallError("staged kanban-workflow differs across agent destinations")
