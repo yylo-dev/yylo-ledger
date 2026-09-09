@@ -46,6 +46,29 @@ The `0.2.1rc6` source/tag is a prerelease; it is not the stable install. Pin exa
 
 Next: [manage tasks](#task-workflow), [use native Records](#native-records), or read the [storage contract](docs/git-native-storage.md).
 
+### Install the Kanban workflow skill
+
+Ledger does not bundle skill content. Explicitly install the canonical
+`kanban-workflow` release from
+[`yylo-dev/yylo-skills`](https://github.com/yylo-dev/yylo-skills):
+
+```bash
+yylo-ledger skills install                 # latest stable release
+yylo-ledger skills install --version 1.0.0 # exact v1.0.0 tag
+yylo-ledger skills update
+```
+
+Installation stages a targeted, non-interactive `npx skills add` first and uses
+a shallow exact-tag Git clone only if npx fails or is unavailable. It validates
+the staged tree before changing `.agents/skills`, `.claude/skills`, or
+`.pi/skills`. Differing existing `kanban-workflow` files are preserved unless
+`--force` is explicit, and unrelated skills are never removed.
+
+`yylo-ledger skills list` and `yylo-ledger skills status` inspect local metadata
+without network access. Ordinary Ledger commands also remain offline. If both
+npx and Git acquisition fail, installation fails without a bundled or cached
+fallback.
+
 ## Capabilities
 
 | Need | Public surface | Boundary |
