@@ -31,7 +31,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Script configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-VERSION_FILE="$PROJECT_ROOT/src/kanban/__init__.py"
+VERSION_FILE="$PROJECT_ROOT/src/yylo_ledger/__init__.py"
 VENV_DIR="$PROJECT_ROOT/.venv"
 
 # Colors for output

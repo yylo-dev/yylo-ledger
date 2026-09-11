@@ -7,7 +7,7 @@ YYLO Ledger is a Git-native task and Record store with a shell-friendly CLI. It 
 - Python import: `yylo_ledger`
 - Source: [yylo-dev/yylo-ledger](https://github.com/yylo-dev/yylo-ledger)
 
-[![Source version](https://img.shields.io/badge/version-0.2.1rc6-blue.svg)](https://pypi.org/project/yylo-ledger/)
+[![Source version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://pypi.org/project/yylo-ledger/)
 
 The badge identifies this source checkout; the stable and prerelease install channels are separated below.
 
