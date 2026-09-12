@@ -96,7 +96,8 @@ def test_direct_and_sdist_derived_wheels_keep_runtime_dependency(tmp_path: Path)
     assert wheel_version(derived) == EXPECTED_VERSION
 
     canonical_slugs = {
-        "artifact-yylo", "ledger-tasks-yylo", "wiki-yylo", "workflow-yylo",
+        "artifact-yylo", "ledger-tasks-yylo", "plan-ledger-tasks-yylo",
+        "ralph-loop-yylo", "understand-project-yylo", "wiki-yylo", "workflow-yylo",
     }
     with zipfile.ZipFile(direct) as bundle:
         direct_names = bundle.namelist()

@@ -7,7 +7,7 @@ YYLO Ledger is a Git-native task and Record store with a shell-friendly CLI. It 
 - Python import: `yylo_ledger`
 - Source: [yylo-dev/yylo-ledger](https://github.com/yylo-dev/yylo-ledger)
 
-[![Source version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://pypi.org/project/yylo-ledger/)
+[![Source version](https://img.shields.io/badge/version-0.3.1-blue.svg)](https://pypi.org/project/yylo-ledger/)
 
 The badge identifies this source checkout; the stable and prerelease install channels are separated below.
 
@@ -21,7 +21,7 @@ Ledger owns Records and task history. [YYLO CLI](https://github.com/yylo-dev/yyl
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install 'yylo-ledger==0.2.0'
+python -m pip install 'yylo-ledger==0.3.1'
 yylo-ledger --version
 
 mkdir ledger-demo
@@ -31,42 +31,38 @@ yylo-ledger list --limit 5 --format table
 yylo-ledger doctor
 ```
 
-A successful run prints `yylo-ledger 0.2.0`, creates a six-character task ID, shows that task in the table, and exits cleanly from `doctor`.
+A successful run prints `yylo-ledger 0.3.1`, creates a six-character task ID, shows that task in the table, and exits cleanly from `doctor`.
 
-### Stable and prerelease channels
+### Stable channel
 
-`0.2.0` is the stable PyPI release. Install the current release candidate only when you intentionally want prerelease behavior:
-
-```bash
-python -m pip install 'yylo-ledger==0.2.1rc6'
-yylo-ledger --version
-```
-
-The `0.2.1rc6` source/tag is a prerelease; it is not the stable install. Pin exact versions in automation.
+`0.3.1` is the stable release with the native Record groups. Pin exact versions
+in automation and verify installed command help before using a native group.
 
 Next: [manage tasks](#task-workflow), [use native Records](#native-records), or read the [storage contract](docs/git-native-storage.md).
 
 ### Install the Ledger skills
 
-Ledger does not bundle skill content. Explicitly install the four canonical
-Ledger skills from
+Ledger does not bundle skill content. Explicitly install the seven canonical
+Ledger and YYLO workflow skills from
 [`yylo-dev/yylo-skills`](https://github.com/yylo-dev/yylo-skills):
-`ledger-tasks-yylo`, `wiki-yylo`, `workflow-yylo`, and `artifact-yylo`.
+`artifact-yylo`, `ledger-tasks-yylo`, `plan-ledger-tasks-yylo`,
+`ralph-loop-yylo`, `understand-project-yylo`, `wiki-yylo`, and `workflow-yylo`.
 
 ```bash
 yylo-ledger skills install                 # latest stable release
-yylo-ledger skills install --version 2.0.0 # exact v2.0.0 tag
+yylo-ledger skills install --version 2.0.1 # exact v2.0.1 tag
 yylo-ledger skills update
 ```
 
 Installation stages a targeted, non-interactive `npx skills add` first and uses
 a shallow exact-tag Git clone only if npx fails or is unavailable. It validates
-the exact four-skill tree before changing `.agents/skills`, `.claude/skills`, or
+the exact seven-skill tree before changing `.agents/skills`, `.claude/skills`, or
 `.pi/skills`. Differing canonical files are preserved unless `--force` is
 explicit, and unrelated skills are never removed. During an explicit install or
-update, the legacy `kanban-workflow` directory is retired only when a trusted
-Ledger install record and its current digest prove it unmodified. Customized or
-unrecorded legacy copies remain in place and are reported as warnings.
+update, legacy `kanban-workflow`, `plan-kanban-tasks`, `ralph-loop`, and
+`understand-project` directories are retired only when a trusted Ledger install
+record and their current digests prove them unmodified. Customized or unrecorded
+legacy copies remain in place and are reported as warnings.
 
 `yylo-ledger skills list` and `yylo-ledger skills status` inspect local metadata
 without network access. Ordinary Ledger commands also remain offline. If both

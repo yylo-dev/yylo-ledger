@@ -15,10 +15,18 @@ REPOSITORY = "https://github.com/yylo-dev/yylo-skills.git"
 SKILLS = (
     "artifact-yylo",
     "ledger-tasks-yylo",
+    "plan-ledger-tasks-yylo",
+    "ralph-loop-yylo",
+    "understand-project-yylo",
     "wiki-yylo",
     "workflow-yylo",
 )
-LEGACY_SKILLS = ("kanban-workflow",)
+LEGACY_SKILLS = (
+    "kanban-workflow",
+    "plan-kanban-tasks",
+    "ralph-loop",
+    "understand-project",
+)
 DESTINATION_ROOTS = (Path(".agents/skills"), Path(".claude/skills"), Path(".pi/skills"))
 DESTINATIONS = tuple(root / skill for root in DESTINATION_ROOTS for skill in SKILLS)
 RECORD_PATH = Path(".juno_task/skills-install.json")
@@ -109,7 +117,7 @@ def _validate_stage(stage: Path) -> Dict[Path, str]:
         staged_root = stage / root
         entries = sorted(path.name for path in staged_root.iterdir()) if staged_root.is_dir() else []
         if entries != expected_entries:
-            raise SkillInstallError("staged agent destination is not the exact four-skill set")
+            raise SkillInstallError("staged agent destination is not the exact canonical skill set")
         for skill in SKILLS:
             relative = root / skill
             values[relative] = _digest(stage / relative)

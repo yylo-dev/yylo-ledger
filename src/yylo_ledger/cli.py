@@ -265,7 +265,7 @@ class TaskCLI:
             dest='skills_command', required=True, metavar='ACTION')
         for action in ('install', 'update'):
             action_parser = skills_subparsers.add_parser(
-                action, help='{} the four Ledger skills from yylo-dev/yylo-skills'.format(action.title()),
+                action, help='{} the seven canonical skills from yylo-dev/yylo-skills'.format(action.title()),
                 allow_abbrev=False)
             action_parser.add_argument('--version', dest='skill_version',
                                        help='Exact stable version (default: latest stable)')

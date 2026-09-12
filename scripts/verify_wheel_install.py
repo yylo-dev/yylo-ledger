@@ -39,7 +39,43 @@ with tempfile.TemporaryDirectory() as temporary:
     executable = executables[0]
     help_result = help_results[0]
     assert all(command in help_result.stdout for command in
-               ("convert", "compatibility", "archive-pack", "archive-search"))
+               ("convert", "compatibility", "archive-pack", "archive-search",
+                "record", "task", "wiki", "workflow", "artifact"))
+    artifact_help = subprocess.run([str(executable), "artifact", "--help"], text=True,
+                                   capture_output=True, check=True)
+    assert "ID-first native Record commands" in artifact_help.stdout
+    for action in ("create", "get", "search", "history", "archive"):
+        action_help = subprocess.run([str(executable), "artifact", action, "--help"],
+                                     text=True, capture_output=True, check=True)
+        assert "usage:" in action_help.stdout and action in action_help.stdout
+    artifact_project = temp / "artifact-project"
+    artifact_project.mkdir()
+    artifact_payload = artifact_project / "contract.md"
+    artifact_payload.write_text("# Installed-wheel artifact canary\n", encoding="utf-8")
+    artifact_env = dict(os.environ, JUNO_TASK_ROOT=str(artifact_project),
+                        JUNO_WORKSPACE_ENFORCEMENT="off")
+    created = subprocess.run([
+        str(executable), "-f", "json", "artifact", "create",
+        "--title", "Installed-wheel artifact canary", "--profile", "report",
+        "--mode", "local", "--media-type", "text/markdown",
+        "--file", str(artifact_payload), "--provenance", "task_id=i76Dhn",
+    ], cwd=artifact_project, env=artifact_env, text=True, capture_output=True, check=True)
+    artifact = json.loads(created.stdout)
+    assert artifact["kind"] == "artifact" and artifact["profile"] == "report"
+    assert artifact["payload"]["immutable_bytes"] is True
+    assert artifact["payload"]["size"] == artifact_payload.stat().st_size
+    artifact_id = artifact["id"]
+    fetched = subprocess.run([str(executable), "-f", "json", "artifact", "get", artifact_id],
+                             cwd=artifact_project, env=artifact_env, text=True,
+                             capture_output=True, check=True)
+    fetched_record = json.loads(fetched.stdout)
+    assert fetched_record["id"] == artifact_id
+    assert fetched_record["payload"]["sha256"] == artifact["payload"]["sha256"]
+    history = subprocess.run([str(executable), "artifact", "history", artifact_id, "-f", "json"],
+                             cwd=artifact_project, env=artifact_env, text=True,
+                             capture_output=True, check=True)
+    history_rows = json.loads(history.stdout)
+    assert len(history_rows) == 1 and history_rows[0]["record_id"] == artifact_id
     archive_help = subprocess.run([str(executable), "archive-pack", "--help"], text=True,
                                   capture_output=True, check=True)
     assert all(action in archive_help.stdout for action in ("plan", "create", "doctor"))
@@ -66,4 +102,7 @@ with tempfile.TemporaryDirectory() as temporary:
     assert "missing pack, checksum" in doctor.stdout
     print(json.dumps({"wheel": wheel.name, "import_probe": json.loads(probe),
                       "entry_points": list(command_names), "archive_public_help": True,
+                      "native_record_groups": ["record", "task", "wiki", "workflow", "artifact"],
+                      "artifact_canary": {"id": artifact_id,
+                                          "sha256": artifact["payload"]["sha256"]},
                       "exact_option_refusals": 4, "incomplete_triplet_doctor": True}))

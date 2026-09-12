@@ -59,9 +59,10 @@ class FakeRunner:
 def old_record(project: Path):
     digests = {}
     for root in DESTINATION_ROOTS:
-        relative = root / LEGACY_SKILLS[0]
-        write_skill(project / relative, LEGACY_SKILLS[0], "legacy canonical")
-        digests[relative.as_posix()] = _digest(project / relative)
+        for skill in LEGACY_SKILLS:
+            relative = root / skill
+            write_skill(project / relative, skill, "legacy canonical")
+            digests[relative.as_posix()] = _digest(project / relative)
     record = {
         "schemaVersion": 1,
         "repository": REPOSITORY,
@@ -84,7 +85,8 @@ def test_resolves_latest_stable_and_exact_version():
         resolve_version("2.0.0-rc.1", runner)
 
 
-def test_npx_first_installs_exact_four_skills_to_all_destinations(tmp_path):
+def test_npx_first_installs_exact_canonical_skills_to_all_destinations(tmp_path):
+    assert len(SKILLS) == 7
     runner = FakeRunner(body="literal $ARGUMENTS $1 $2")
     result = install(tmp_path, "2.0.0", runner=runner)
     assert result["acquisition"] == "npx"
@@ -144,7 +146,8 @@ def test_recorded_unmodified_legacy_skill_is_retired(tmp_path):
     result = install(tmp_path, "2.0.0", runner=FakeRunner())
     assert result["changed"] is True
     assert "warnings" not in result
-    assert all(not (tmp_path / root / LEGACY_SKILLS[0]).exists() for root in DESTINATION_ROOTS)
+    assert all(not (tmp_path / root / skill).exists()
+               for root in DESTINATION_ROOTS for skill in LEGACY_SKILLS)
     assert json.loads((tmp_path / RECORD_PATH).read_text())["skills"] == list(SKILLS)
 
 
@@ -183,7 +186,8 @@ def test_record_failure_rolls_back_installs_retirements_and_record(tmp_path):
         with pytest.raises(OSError, match="record write failed"):
             install(tmp_path, "2.0.0", runner=FakeRunner())
     assert record_path.read_bytes() == before_record
-    assert all((tmp_path / root / LEGACY_SKILLS[0]).is_dir() for root in DESTINATION_ROOTS)
+    assert all((tmp_path / root / skill).is_dir()
+               for root in DESTINATION_ROOTS for skill in LEGACY_SKILLS)
     assert all(not (tmp_path / destination).exists() for destination in DESTINATIONS)
 
 
