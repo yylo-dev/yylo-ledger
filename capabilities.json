@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "packageId": "yylo-ledger",
+  "sourceVersion": "0.3.1",
+  "evidenceDate": "2026-09-14",
+  "prerequisites": "Python 3.8+ and a shell. A virtual environment keeps the selected Ledger executable explicit.",
+  "releases": [
+    {
+      "version": "0.3.1",
+      "url": "https://files.pythonhosted.org/packages/fa/92/bfa0c343c33c3cdf9ae048660843e30c5609e45514830cf3998624e64614/yylo_ledger-0.3.1.tar.gz",
+      "integrity": "sha256-a766836b4c7a796d1ff716d7d852061f2886e7be76ae96bb170c1f8243490866",
+      "readmeSha256": "99a2f471e18c020a17d4e9422e235f8993cd7d19fbd2641d37f3a1857cc2eeb3"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "tasks",
+      "title": "Tasks and dependencies",
+      "summary": "Keep task intent, status, blockers and responses in Git-native records.",
+      "details": [
+        "Use create, list, search, get, update and mark for the legacy flat task interface. Native Records also provide a typed task profile.",
+        "Dependencies must be explicit: ready finds unblocked work and order sorts dependencies. Cycles and invalid completed-task transitions fail before writes.",
+        "Use body-file and response-file transport for rich Markdown; do not hand-edit the store."
+      ],
+      "commands": [
+        "yylo-ledger create --title \"Verify onboarding\" --body \"Run the documented quick start\" --tags onboarding\nyylo-ledger list --limit 5 --format table\nyylo-ledger ready\nyylo-ledger doctor"
+      ],
+      "boundary": "Ledger records work; it does not own coding-agent execution or Git integration.",
+      "sourceFiles": [
+        "README.md"
+      ],
+      "verifiedReleases": [
+        "0.3.1"
+      ],
+      "releaseEvidence": "README sections matching this capability, inspected in the hash-bound published archive."
+    },
+    {
+      "id": "records",
+      "title": "Native Records: wiki, workflow and artifacts",
+      "summary": "Use immutable IDs and revision-safe updates for durable engineering memory.",
+      "details": [
+        "Wiki stores Markdown knowledge. Workflow stores validated definitions but does not execute them. Artifacts retain provenance and intentional payload modes.",
+        "General Records and typed profiles share ID-first discovery. Aliases resolve to an immutable ID; updates use revision/preimage controls.",
+        "Search is bounded by count and bytes. Summary excludes payload bytes; full output is an explicit audited choice. Sensitive records expose safe identity metadata."
+      ],
+      "commands": [
+        "yylo-ledger wiki --help\nyylo-ledger workflow --help\nyylo-ledger artifact --help\nyylo-ledger record search --scope all --profile wiki --projection summary --limit 20 --format json"
+      ],
+      "boundary": "Storage, workflow execution and evidence retention remain separate authorities.",
+      "sourceFiles": [
+        "README.md"
+      ],
+      "verifiedReleases": [
+        "0.3.1"
+      ],
+      "releaseEvidence": "README sections matching this capability, inspected in the hash-bound published archive."
+    },
+    {
+      "id": "host",
+      "title": "Read-only Record host",
+      "summary": "Serve bounded local views without exposing a mutation API.",
+      "details": [
+        "The host exposes record, history, wiki, workflow and artifact routes. Loopback is the default.",
+        "Non-loopback access requires an explicit private policy. External artifact redirects require approved HTTPS hosts; traversal and unsafe redirects fail closed."
+      ],
+      "commands": [
+        "yylo-ledger host --host 127.0.0.1 --port 8765 --access-policy local"
+      ],
+      "boundary": "No write, workflow-execution or arbitrary remote-fetch API.",
+      "sourceFiles": [
+        "README.md"
+      ],
+      "verifiedReleases": [
+        "0.3.1"
+      ],
+      "releaseEvidence": "README sections matching this capability, inspected in the hash-bound published archive."
+    },
+    {
+      "id": "migration",
+      "title": "Preservation-first migration",
+      "summary": "Copy legacy knowledge into Records without deleting original files.",
+      "details": [
+        "Inventory, plan, apply, status and verify use explicit receipts outside the source root. Review the plan before apply.",
+        "Plans bind source bytes, destination, runtime and record identities. Drift fails closed. Retries reuse only matching migration provenance."
+      ],
+      "commands": [
+        "yylo-ledger migration inventory --help\nyylo-ledger migration plan --help\nyylo-ledger migration apply --help"
+      ],
+      "boundary": "Migration is not cleanup: source deletion is never performed.",
+      "sourceFiles": [
+        "README.md"
+      ],
+      "verifiedReleases": [
+        "0.3.1"
+      ],
+      "releaseEvidence": "README sections matching this capability, inspected in the hash-bound published archive."
+    },
+    {
+      "id": "archives",
+      "title": "History and cold archives",
+      "summary": "Keep current state and append-only history separate.",
+      "details": [
+        "Markdown and segmented ledgers are canonical. SQLite is a rebuildable query cache. Default discovery reads hot work; exact ID lookups can resolve verified cold packs.",
+        "Archive-pack planning and creation are separate, revision-bound owner operations requiring clean state and external receipts. Follow up with a new related task rather than reopening a cold ID."
+      ],
+      "commands": [
+        "yylo-ledger history TASK_ID --limit 20\nyylo-ledger archive-pack plan --help\nyylo-ledger archive-search --limit 20 --projection metadata"
+      ],
+      "boundary": "Never edit sealed packs or automate destructive archival.",
+      "sourceFiles": [
+        "README.md"
+      ],
+      "verifiedReleases": [
+        "0.3.1"
+      ],
+      "releaseEvidence": "README sections matching this capability, inspected in the hash-bound published archive."
+    },
+    {
+      "id": "skills",
+      "title": "Install the four Ledger skills",
+      "summary": "Use task, wiki, workflow and artifact procedures without installing YYLO CLI.",
+      "details": [
+        "The targeted installer stages and validates exactly four canonical skills. It tries the open Skills CLI before an exact-tag Git fallback.",
+        "Custom and unrelated skills are preserved. Install/update are explicit network operations; list/status and normal Ledger commands stay offline."
+      ],
+      "commands": [
+        "yylo-ledger skills install\nyylo-ledger skills status"
+      ],
+      "boundary": "Planning and bounded-delivery skills rely on YYLO orchestration, not standalone Ledger.",
+      "sourceFiles": [
+        "README.md"
+      ],
+      "verifiedReleases": [
+        "0.3.1"
+      ],
+      "releaseEvidence": "README sections matching this capability, inspected in the hash-bound published archive."
+    },
+    {
+      "id": "routing",
+      "title": "Cross-project routing and machine output",
+      "summary": "Make destination and output projection explicit.",
+      "details": [
+        "Project routing is opt-in and allowlisted. Invalid or stale routes never silently fall back to the source board.",
+        "Use JSON, NDJSON, XML or table output. Request bounded projections rather than dumping all payloads."
+      ],
+      "commands": [
+        "yylo-ledger project --help\nyylo-ledger search --status todo --format json"
+      ],
+      "boundary": "The destination wrapper and policy remain authoritative.",
+      "sourceFiles": [
+        "README.md"
+      ],
+      "verifiedReleases": [
+        "0.3.1"
+      ],
+      "releaseEvidence": "README sections matching this capability, inspected in the hash-bound published archive."
+    }
+  ]
+}
