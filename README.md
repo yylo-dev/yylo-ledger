@@ -277,11 +277,28 @@ Use `yylo-ledger completion zsh` for Zsh and source its output from your shell c
 ```bash
 git clone https://github.com/yylo-dev/yylo-ledger.git
 cd yylo-ledger
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e .
-python -m pytest -q
+# Test tooling baseline: CPython 3.12 or 3.13 on POSIX.
+python3 scripts/hydrate_tests.py
+python3 scripts/hydrate_tests.py --check
+.venv/bin/python -m pytest -q
 ```
+
+`requirements-test.lock` pins runtime, test and build tools with PyPI wheel hashes.
+Hydration creates only this checkout's ignored `.venv`, installs with
+`--require-hashes --only-binary=:all:`, checks installed versions and dependency
+consistency, and records the lock digest only after success. `--check` is offline
+and never repairs. Tests import this checkout's `src`, not an installed Ledger.
+Rerun hydration when the lock changes; a broken, shared or symbolic environment
+is preserved for owner review rather than deleted. No runtime Python support
+policy is changed. The command has a 600-second budget and prints an OK/FAILED
+footer; a slow or failed install is not permission to use another checkout's tools.
+
+This is an explicit project-local preparation command. It does not rewrite an
+active task's frozen monorepo hydration workflow or claim that future task start
+provisions Python automatically. Keep dependency updates intentional: choose
+versions compatible with `setup.py`, refresh hashes from their version-specific
+PyPI release metadata, and verify both supported test interpreters before widening
+the tooling baseline.
 
 The repository embeds Ledger as a real submodule in the YYLO monorepo; standalone Ledger commits and the parent gitlink are separate history. Do not flatten the submodule into parent-repository files.
 

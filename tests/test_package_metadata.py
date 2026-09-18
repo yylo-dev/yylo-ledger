@@ -70,7 +70,7 @@ def build_wheel(source: Path, destination: Path) -> Path:
 
 def test_direct_and_sdist_derived_wheels_keep_runtime_dependency(tmp_path: Path) -> None:
     source = tmp_path / "source"
-    shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(".git", "build", "dist", "*.egg-info", "__pycache__"))
+    shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(".git", ".venv", "build", "dist", "*.egg-info", "__pycache__"))
     direct = build_wheel(source, tmp_path / "direct")
 
     subprocess.run(

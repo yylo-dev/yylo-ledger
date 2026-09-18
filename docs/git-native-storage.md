@@ -93,6 +93,25 @@ juno-ledger update TASKID --status done --receipt-file /receipts/update.json
 
 Mutations lock one task, compare optional `--expected-revision`, atomically replace current state first, append a ledger event, verify persistence, and refresh the disposable cache. Lock waits are bounded by `JUNO_KANBAN_LOCK_TIMEOUT_SECONDS` (default 5 seconds) and timeout errors name the resource and recorded owner; no timeout kills a producer after it acquires the lock. Create/update/mark/archive can emit complete task-scoped receipts. If ledger/cache work is interrupted, canonical current state wins and the next mutation/reconcile converges.
 
+Controller-routed writes keep an exact controller path/ref/common-directory/HEAD
+binding throughout transaction planning and activation. Under the board lock,
+before reading mutation inputs, a stale HEAD may be revalidated once if the old
+commit is a known ancestor and the committed diff contains only canonical
+`.juno_task/tasks/<shard>/<ID>.md` and
+`.juno_task/ledger/<shard>/<ID>/<segment>.ndjson` files. This admits a single
+caller's metadata checkpoint without retrying a write. Configuration, policy,
+runtime, lease, other-path and non-fast-forward changes still refuse; an unknown
+HEAD is not refresh authority. Each Git comparison is bounded to five seconds.
+A second HEAD movement during revalidation refuses rather than looping.
+
+Task revision CAS, abandoned-transaction recovery and the exact pre-activation
+identity guard remain mandatory. A stale task response is never replayed after
+another writer wins. Live registration is checked again before activation;
+activation failures roll back as before and are never automatically retried.
+The refreshed binding is scoped to one locked operation and never overwrites
+inherited environment inputs. A remaining `controller_head` refusal calls for
+inspection and a freshly resolved invocation, not removal of the guard.
+
 Collection reads use SQLite only after schema/config/HEAD/working-tree freshness checks. Git changes refresh changed paths; non-Git boards compare path metadata. Cache deletion or corruption triggers canonical rebuild. SQLite waits are bounded by `JUNO_KANBAN_CACHE_TIMEOUT_SECONDS` (default 0.25 seconds). Hot exact `get` reads the identity path directly; optional dependency enrichment that cannot read the derived cache is omitted with `exact_get_enrichment_unavailable`, never allowed to hide canonical task truth. Set `JUNO_KANBAN_DIAGNOSTICS=1` for exact-get phase timings.
 
 Opaque cursors are opt-in with `--show-cursor`; context-efficient automation should normally use `--offset`. Opted-in cursor values contain normalized last-sort key, query identity, cache-secret HMAC, and exact cache revision; they are neither offset cursors nor reusable after mutation.

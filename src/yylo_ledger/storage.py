@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import subprocess
 import tempfile
 import shutil
@@ -98,6 +99,11 @@ class TaskStorage:
         # ID inventory for multi-ID exact reads instead of reparsing every sealed
         # manifest for every requested identity.
         self._archive_id_inventory: Optional[Dict[str, str]] = None
+        # Refreshed only before reading mutation inputs under the board lock;
+        # never inherited by another operation or written back to the environment.
+        self._mutation_binding: Optional[Dict[str, Any]] = None
+        self._mutation_binding_source: Optional[str] = None
+        self._mutation_registration: Optional[tuple] = None
 
     @staticmethod
     def _validate_id(task_id: str):
@@ -449,6 +455,7 @@ class TaskStorage:
         if registered != self.project_root.resolve() or actual.returncode != 0 or actual.stdout.strip() != expected_ref:
             raise ValueError(
                 f"mutation authority is registered at {registered} on {expected_ref}; local fallback refused")
+        return (str(source_root), tuple(values["path"]), tuple(values["branch"]))
 
     @contextmanager
     def _board_lock(self):
@@ -459,9 +466,14 @@ class TaskStorage:
         with path.open("a+b") as handle:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             try:
+                self._mutation_registration = self._verify_registered_controller()
                 self._recover_transactions_locked()
+                self._revalidate_controller_binding()
                 yield
             finally:
+                self._mutation_binding = None
+                self._mutation_binding_source = None
+                self._mutation_registration = None
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _mutation_fault(self, point: str):
@@ -492,14 +504,75 @@ class TaskStorage:
                 "controller_ref": ref.stdout.strip() if ref.returncode == 0 else None,
                 "controller_head": head.stdout.strip() if head.returncode == 0 else None}
 
-    def _verify_controller_binding(self, identity: Mapping[str, Any]):
+    def _controller_binding(self) -> Optional[Dict[str, Any]]:
         raw = os.environ.get("YYLO_LEDGER_CONTROLLER_BINDING", "").strip()
+        if self._mutation_binding is not None:
+            if raw != self._mutation_binding_source:
+                raise ValueError("canonical controller binding input changed during mutation")
+            return self._mutation_binding
         if not raw:
-            return
+            return None
         try:
             expected = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise ValueError(f"malformed canonical controller binding: {exc}") from exc
+        if not isinstance(expected, dict):
+            raise ValueError("malformed canonical controller binding: expected an object")
+        return expected
+
+    def _revalidate_controller_binding(self) -> None:
+        """Refresh once, before planning, only across task/history checkpoints.
+
+        Never retry activation or relax its exact identity guard. Unknown heads,
+        non-fast-forward movement and changes outside canonical task/history
+        files still require a new explicitly resolved invocation. In particular,
+        policy/configuration, runtime, lease and registration changes are not
+        eligible for automatic revalidation.
+        """
+        source = os.environ.get("YYLO_LEDGER_CONTROLLER_BINDING", "").strip()
+        expected = self._controller_binding()
+        if expected is None:
+            return
+        observed = self._git_mutation_identity()
+        for key in ("git_common_dir", "controller_path", "controller_ref"):
+            if expected.get(key) != observed.get(key):
+                raise ValueError(f"canonical controller binding changed at {key}; refusing mutation")
+        if expected.get("controller_head") == observed.get("controller_head"):
+            return
+        refused = "canonical controller binding changed at controller_head; refusing mutation"
+        old, new = expected.get("controller_head"), observed.get("controller_head")
+        if not all(isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", sha)
+                   for sha in (old, new)):
+            raise ValueError(refused + " (pre-write revalidation requires exact commit IDs)")
+        try:
+            ancestor = subprocess.run(
+                ["git", "-C", str(self.project_root), "merge-base", "--is-ancestor", old, new],
+                stdin=subprocess.DEVNULL, capture_output=True, timeout=5)
+            if ancestor.returncode:
+                raise ValueError(refused + " (previous HEAD is unavailable or not an ancestor)")
+            changed = subprocess.run(
+                ["git", "-C", str(self.project_root), "diff", "--no-ext-diff", "--no-renames",
+                 "--name-only", "-z", old, new, "--"],
+                stdin=subprocess.DEVNULL, capture_output=True, timeout=5)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError(refused + " (bounded pre-write revalidation failed)") from exc
+        metadata_path = rb"\.juno_task/(tasks/[a-z0-9]{2}/[A-Za-z0-9]{6}\.md|ledger/[a-z0-9]{2}/[A-Za-z0-9]{6}/[0-9]{6}\.ndjson)"
+        if changed.returncode or any(not re.fullmatch(metadata_path, name)
+                                     for name in changed.stdout.split(b"\0") if name):
+            raise ValueError(refused + " (changes extend beyond task/history checkpoints)")
+        if self._verify_registered_controller() != self._mutation_registration:
+            raise ValueError(refused + " (registration changed during pre-write revalidation)")
+        if self._git_mutation_identity() != observed:
+            raise ValueError(refused + " (HEAD moved again during pre-write revalidation)")
+        if os.environ.get("YYLO_LEDGER_CONTROLLER_BINDING", "").strip() != source:
+            raise ValueError("canonical controller binding input changed during pre-write revalidation")
+        self._mutation_binding = observed
+        self._mutation_binding_source = source
+
+    def _verify_controller_binding(self, identity: Mapping[str, Any]):
+        expected = self._controller_binding()
+        if expected is None:
+            return
         for key in ("git_common_dir", "controller_path", "controller_ref", "controller_head"):
             if expected.get(key) != identity.get(key):
                 raise ValueError(f"canonical controller binding changed at {key}; refusing mutation")
@@ -569,7 +642,10 @@ class TaskStorage:
             self._mutation_fault("before_intent")
             self._atomic_write(transaction_dir / "plan.json", json.dumps(plan, sort_keys=True) + "\n")
             self._mutation_fault("after_intent")
-            # HEAD/ref/path registration is a lease, not merely receipt metadata.
+            # Revalidation stops before planning. Activation still requires the
+            # exact captured identity, including HEAD and live registration.
+            if self._verify_registered_controller() != self._mutation_registration:
+                raise ValueError("canonical controller registration changed before activation")
             if self._git_mutation_identity() != identity:
                 raise ValueError("canonical controller identity changed before activation")
             self._verify_controller_binding(identity)
