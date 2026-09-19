@@ -152,3 +152,48 @@ def test_selection_and_receipt_location_are_explicit(tmp_path):
         migration.apply(loaded, status_path, record_ids=[loaded["items"][0]["record_id"]], all_items=True)
     with pytest.raises(RecordError, match="MIGRATION_RECEIPT_INSIDE_SOURCE"):
         write_inventory(source / "inventory.json", inventory(source, []), source)
+
+
+def test_explicit_mapping_reuse_preserves_ids_and_refuses_duplicate_on_edit(tmp_path):
+    source, _, inv, prior, _, status, migration = fixture(tmp_path)
+    migration.apply(prior, status, record_ids=[], all_items=True)
+    args = dict(destination_root=migration.juno_root.parent, documents=migration.documents,
+                artifacts=migration.artifacts, source_root=source, reuse_plan=prior)
+    replay = make_plan(inv, **args)
+    assert replay["reused_plan_sha256"] == prior["plan_sha256"]
+    assert [row["record_id"] for row in replay["items"]] == [row["record_id"] for row in prior["items"]]
+    assert all(row["destination_state"] == "exact_existing" for row in replay["items"])
+    wiki = next(row for row in replay["items"] if row["profile"] == "wiki")
+    record = migration.documents.get(wiki["record_id"])
+    migration.documents.update(record["id"], path="/payload/text", expected=record["payload"]["text"],
+                               replacement="# Local change\n", expected_revision=1)
+    with pytest.raises(RecordError, match="MIGRATION_REUSE_CONFLICT"):
+        make_plan(inv, **args)
+    assert migration.documents.get(record["id"])["payload"]["text"] == "# Local change\n"
+
+
+def test_document_migration_rejects_secrets_and_preserves_source(tmp_path):
+    source, _, _, _, _, status, migration = fixture(tmp_path)
+    page = source / 'wiki/guide.md'
+    payload = 'password=synthetic-test-credential\n'
+    page.write_text(payload)
+    inv = inventory(source, [{"kind": "wiki", "path": "wiki/guide.md"}])
+    plan = make_plan(inv, destination_root=migration.juno_root.parent,
+                     documents=migration.documents, artifacts=migration.artifacts, source_root=source)
+    with pytest.raises(RecordError, match='MIGRATION_SECRET_REJECTED'):
+        migration.apply(plan, status, record_ids=[plan['items'][0]['record_id']])
+    assert page.read_text() == payload
+    assert not list(migration.documents.records_root.glob('*/*/*.json'))
+
+
+def test_mapping_reuse_rejects_reclassification_and_foreign_receipts(tmp_path):
+    source, _, _, prior, _, _, migration = fixture(tmp_path)
+    changed = inventory(source, [{"kind": "pdr", "path": "wiki/guide.md"}])
+    args = dict(destination_root=migration.juno_root.parent, documents=migration.documents,
+                artifacts=migration.artifacts, source_root=source, reuse_plan=prior)
+    with pytest.raises(RecordError, match="MIGRATION_REUSE_CONFLICT"):
+        make_plan(changed, **args)
+    tampered = dict(prior); tampered["runtime_version"] = "tampered"
+    args["reuse_plan"] = tampered
+    with pytest.raises(RecordError, match="MIGRATION_PLAN_TAMPERED"):
+        make_plan(changed, **args)

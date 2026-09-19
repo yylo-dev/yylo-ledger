@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from .artifacts import ArtifactStore
 from .documents import DocumentStore
-from .migration import (INVENTORY_SCHEMA, RecordMigration, _read_json, inventory,
+from .migration import (INVENTORY_SCHEMA, PLAN_SCHEMA, RecordMigration, _read_json, inventory,
                         make_plan, status_summary, write_inventory, write_plan)
 from .records import RecordError
 
@@ -29,6 +29,7 @@ def add_migration_parser(subparsers: argparse._SubParsersAction) -> None:
     plan = actions.add_parser("plan", allow_abbrev=False)
     plan.add_argument("--source-root", required=True)
     plan.add_argument("--inventory", required=True)
+    plan.add_argument("--reuse-plan", help="Preserve IDs from a prior sealed mapping; changed sources/Records conflict")
     plan.add_argument("--output", required=True, help="Fresh external immutable plan")
     apply = actions.add_parser("apply", allow_abbrev=False)
     apply.add_argument("--source-root", required=True)
@@ -91,7 +92,8 @@ class MigrationCLI:
                     repository_ids=self.storage.git_repository_ids)
                 value = make_plan(source, destination_root=self.storage.juno_root.parent,
                                   documents=documents, artifacts=artifacts,
-                                  source_root=Path(args.source_root))
+                                  source_root=Path(args.source_root),
+                                  reuse_plan=_read_json(Path(args.reuse_plan), PLAN_SCHEMA) if args.reuse_plan else None)
                 write_plan(Path(args.output), value, Path(args.source_root))
                 output = {"plan": str(Path(args.output).resolve()), "plan_sha256": value["plan_sha256"],
                           **value["summary"], "source_preserved": True}

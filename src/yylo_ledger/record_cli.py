@@ -134,6 +134,19 @@ def add_record_parsers(subparsers: argparse._SubParsersAction) -> None:
             help=("Native Record API v2" if group == "record" else f"Typed {group} Record API v2"),
             description="ID-first native Record commands (v2; legacy flat task commands remain compatible)")
         actions = parser.add_subparsers(dest="record_action", required=True, metavar="ACTION")
+        if group == "wiki":
+            for action in ("plan-package", "publish-package", "bind-package"):
+                package = actions.add_parser(action, allow_abbrev=False,
+                    help="Stage release-bound package wiki revisions; does not activate a generation")
+                package.add_argument("--manifest-file", required=True)
+                if action in ("publish-package", "bind-package"):
+                    package.add_argument("--plan-file", required=True)
+            for action in ("verify-package", "get-package"):
+                package = actions.add_parser(action, allow_abbrev=False)
+                package.add_argument("--binding-file")
+                if action == "get-package":
+                    package.add_argument("key")
+                    package.add_argument("--source", action="store_true")
         create = actions.add_parser("create", allow_abbrev=False)
         _add_create(create, group)
         for action in ("list", "search"):
@@ -585,6 +598,32 @@ class RecordCLI:
     def run(self, args: argparse.Namespace) -> int:
         group, action = args.command, args.record_action
         try:
+            if group == "wiki" and action in ("plan-package", "publish-package", "bind-package",
+                                               "verify-package", "get-package"):
+                from .package_wiki import PackageWikiStore
+                store = PackageWikiStore(self.root, project_root=self.tasks.git_project_root,
+                                         repository_ids=self.tasks.git_repository_ids)
+                if action in ("verify-package", "get-package"):
+                    binding = json.loads(_read_text(args.binding_file or str(self.root / "config/package-wiki.json")))
+                    result = store.verify_generation_binding(binding)
+                    if action == "get-package":
+                        pins = [row for row in binding["records"] if row["key"] == args.key]
+                        if len(pins) != 1:
+                            raise RecordError("PACKAGE_WIKI_BINDING_INVALID", "key absent from active binding")
+                        result = store.get(pins[0]["id"], pins[0]["revision"])
+                        if args.source:
+                            sys.stdout.write(result["payload"]["text"])
+                            return 0
+                else:
+                    manifest = json.loads(_read_text(args.manifest_file))
+                    if action == "plan-package":
+                        result = store.plan(manifest)
+                    elif action == "bind-package":
+                        result = store.generation_binding(manifest, json.loads(_read_text(args.plan_file)))
+                    else:
+                        result = store.publish(manifest, json.loads(_read_text(args.plan_file)))
+                print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+                return 0
             if action == "create": return self._create(args, group)
             if action in ("list", "search"): return self._search(args, group)
             if action == "get": return self._get(args, group)

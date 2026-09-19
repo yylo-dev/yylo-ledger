@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
 from . import __version__
-from .artifacts import ARTIFACT_PROFILES, PAYLOAD_MODES, ArtifactStore
+from .artifacts import ARTIFACT_PROFILES, PAYLOAD_MODES, ArtifactStore, _SECRET_PATTERNS
 from .documents import DocumentStore
 from .profiles import WORKFLOW_SCHEMA_V1
 from .records import RECORD_ID_RE, RecordError, value_digest
@@ -32,7 +32,7 @@ INVENTORY_SCHEMA = "yylo_ledger_record_migration_inventory.v1"
 PLAN_SCHEMA = "yylo_ledger_record_migration_plan.v1"
 STATUS_SCHEMA = "yylo_ledger_record_migration_status.v1"
 _BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-_DOCUMENT_EXTENSIONS = {"wiki": (".md",), "workflow": (".yaml", ".yml")}
+_DOCUMENT_EXTENSIONS = {"wiki": (".md",), "pdr": (".md",), "workflow": (".yaml", ".yml")}
 _FORBIDDEN_ROOTS = (
     ".git", ".juno_task/runtime", ".juno_task/logs", ".juno_task/cache",
     ".juno_task/locks", ".juno_task/objects", ".juno_task/documents",
@@ -174,8 +174,8 @@ def _blob_identity(root: Path, relative: str) -> Optional[str]:
 def _file_item(root: Path, declaration: Mapping[str, Any]) -> dict[str, Any]:
     relative, source = _safe_relative(root, str(declaration.get("path") or ""))
     kind = declaration.get("kind")
-    if kind not in ("wiki", "workflow", "artifact"):
-        raise RecordError("MIGRATION_DECLARATION_INVALID", "kind must be wiki, workflow, or artifact")
+    if kind not in ("wiki", "pdr", "workflow", "artifact"):
+        raise RecordError("MIGRATION_DECLARATION_INVALID", "kind must be wiki, pdr, workflow, or artifact")
     content = source.read_bytes()
     profile = kind
     mode = None
@@ -197,7 +197,7 @@ def _file_item(root: Path, declaration: Mapping[str, Any]) -> dict[str, Any]:
             raise RecordError("DOCUMENT_PAYLOAD_INVALID", f"Document source must use LF line endings: {relative}")
     stat = source.stat()
     media_type = declaration.get("media_type") or (
-        "text/markdown" if kind == "wiki" else "application/yaml" if kind == "workflow"
+        "text/markdown" if kind in ("wiki", "pdr") else "application/yaml" if kind == "workflow"
         else mimetypes.guess_type(relative)[0] or "application/octet-stream")
     result = {
         "source_path": relative,
@@ -320,7 +320,8 @@ def _record_matches(record: Mapping[str, Any], item: Mapping[str, Any]) -> bool:
 
 def make_plan(inventory_value: Mapping[str, Any], *, destination_root: Path,
               documents: DocumentStore, artifacts: ArtifactStore,
-              source_root: Optional[Path] = None) -> dict[str, Any]:
+              source_root: Optional[Path] = None,
+              reuse_plan: Optional[Mapping[str, Any]] = None) -> dict[str, Any]:
     if inventory_value.get("schema_version") != INVENTORY_SCHEMA:
         raise RecordError("MIGRATION_INVENTORY_INVALID", "unsupported inventory schema")
     _verify_seal(inventory_value, "inventory_sha256", "MIGRATION_INVENTORY_TAMPERED")
@@ -337,11 +338,40 @@ def make_plan(inventory_value: Mapping[str, Any], *, destination_root: Path,
                     or hashlib.sha256(content).hexdigest() != item.get("source_sha256")
                     or _blob_identity(root, relative) != item.get("source_git_blob")):
                 raise RecordError("MIGRATION_SOURCE_DRIFT", f"source changed after inventory: {relative}")
+    reused = {}
+    if reuse_plan is not None:
+        if reuse_plan.get("schema_version") != PLAN_SCHEMA:
+            raise RecordError("MIGRATION_REUSE_INVALID", "unsupported historical mapping schema")
+        _verify_seal(reuse_plan, "plan_sha256", "MIGRATION_PLAN_TAMPERED")
+        destination_sha = hashlib.sha256(str(Path(destination_root).resolve()).encode()).hexdigest()
+        if (reuse_plan.get("source", {}).get("root_sha256") != inventory_value["source"]["root_sha256"]
+                or reuse_plan.get("destination", {}).get("root_sha256") != destination_sha):
+            raise RecordError("MIGRATION_REUSE_INVALID", "historical mapping belongs to another source/destination")
+        for item in reuse_plan.get("items", []):
+            if (not isinstance(item, Mapping) or not isinstance(item.get("source_path"), str)
+                    or not isinstance(item.get("record_id"), str)
+                    or not RECORD_ID_RE.fullmatch(item["record_id"])
+                    or item["source_path"] in reused):
+                raise RecordError("MIGRATION_REUSE_INVALID", "historical mapping is ambiguous")
+            reused[item["source_path"]] = item
     assigned: set[str] = set()
     planned = []
     for source in inventory_value.get("items") or []:
         if not isinstance(source, Mapping):
             raise RecordError("MIGRATION_INVENTORY_INVALID", "inventory item must be an object")
+        prior = reused.get(source["source_path"])
+        if prior is not None:
+            if any(prior.get(key) != source.get(key) for key in
+                   ("source_sha256", "kind", "profile", "payload_mode", "media_type")):
+                raise RecordError("MIGRATION_REUSE_CONFLICT", "source/classification changed; preserve the prior mapping")
+            identity = prior["record_id"]
+            existing = _existing(documents, artifacts, identity)
+            if identity in assigned or (existing is not None and not _record_matches(existing, source)):
+                raise RecordError("MIGRATION_REUSE_CONFLICT", "mapped Record changed; do not allocate a duplicate")
+            assigned.add(identity)
+            planned.append({**dict(source), "record_id": identity,
+                            "destination_state": "exact_existing" if existing else "absent"})
+            continue
         counter = 0
         while True:
             seed = f"{inventory_value['source']['root_sha256']}\0{source['source_path']}\0{source['kind']}\0{source['profile']}\0{counter}"
@@ -369,6 +399,8 @@ def make_plan(inventory_value: Mapping[str, Any], *, destination_root: Path,
         "summary": dict(inventory_value["summary"]),
         "deletes_source": False,
     }
+    if reuse_plan is not None:
+        plan["reused_plan_sha256"] = reuse_plan["plan_sha256"]
     return _seal(plan, "plan_sha256")
 
 
@@ -453,6 +485,8 @@ class RecordMigration:
         migration = {"schema_version": 1, "plan_sha256": plan["plan_sha256"],
                      "source_path": item["source_path"], "source_sha256": item["source_sha256"]}
         if item["kind"] == "document":
+            if any(pattern.search(content) for pattern in _SECRET_PATTERNS):
+                raise RecordError("MIGRATION_SECRET_REJECTED", "Document matches the credential/secret policy")
             text = content.decode("utf-8")
             return self.documents.create(
                 record_id=item["record_id"], title=item["title"], profile=item["profile"],
