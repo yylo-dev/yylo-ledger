@@ -149,6 +149,7 @@ def task_record_projection(task: Mapping[str, Any]) -> Dict[str, Any]:
         "relations": relations,
         "system_metadata": system,
         "custom_metadata": dict(task.get("custom_metadata") or {}),
+        "fields": dict(task.get("fields") or {}),
     }
 
 

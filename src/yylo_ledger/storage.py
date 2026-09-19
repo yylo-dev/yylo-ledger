@@ -790,6 +790,10 @@ class TaskStorage:
                 unmet.append(blocker_id)
         return unmet
 
+    def _validate_pdr_binding(self, candidate, previous=None):
+        from .pdr import validate_pdr_binding
+        validate_pdr_binding(self.juno_root, candidate, previous)
+
     def _assert_completion_invariant(self, task: Mapping[str, Any],
                                      status_overrides: Optional[Mapping[str, str]] = None):
         if task.get("status") == "done":
@@ -826,6 +830,7 @@ class TaskStorage:
             if path.exists():
                 raise ValueError(f"task already exists: {task_id}")
             self._enforce_window({}, {"fields": record.get("fields") or {}})
+            self._validate_pdr_binding(record)
             self._assert_completion_invariant(record)
             context = capture_creation_context(
                 controller_root=self.project_root, project_root=self.git_project_root,
@@ -907,6 +912,7 @@ class TaskStorage:
             prospective = dict(plain_value(current))
             prospective.update(plain_value(updates))
             self._assert_completion_invariant(prospective)
+            self._validate_pdr_binding(prospective, current)
             self._reconcile_locked(task_id, current)
             self._enforce_window(current, updates)
             task = Task.from_dict(plain_value(current), validate=False, config=self.config.to_dict())
@@ -991,12 +997,13 @@ class TaskStorage:
                 for key in ("slug", "aliases", "profile", "title", "namespace", "tier",
                             "media_type", "payload", "revision", "relations",
                             "system_metadata", "custom_metadata", "body", "status",
-                            "agent_response", "feature_tags", "related_tasks", "blocked_by"):
+                            "agent_response", "feature_tags", "related_tasks", "blocked_by", "fields"):
                     if key in projected:
                         persisted[key] = projected[key]
                 persisted["record_schema_version"] = 2
                 persisted["last_modified"] = projected["last_modified"]
                 Task.from_dict(persisted, validate=True, config=self.config.to_dict())
+                self._validate_pdr_binding(persisted, current)
                 after_hash = self.normalized_hash(persisted)
                 actor = provenance or RevisionProvenance(actor_type="human")
                 event = self.ledger.prepare(
@@ -1024,6 +1031,7 @@ class TaskStorage:
                 # contains Ledger-owned creation context or other invalid fields.
                 self._raise_if_archived(task_id)
             record = self._metadata_record(plain_value(record))
+            self._validate_pdr_binding(record, self._read_path(path) if path.exists() else None)
             self._assert_completion_invariant(record)
             if not path.exists():
                 if (record.get("system_metadata") or {}).get("creation_context") is not None:

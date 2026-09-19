@@ -29,7 +29,7 @@ from .records import RECORD_ID_RE, RecordError, payload_digest, task_record_proj
 from .workflow_yaml import normalize_workflow_yaml
 
 KINDS = ("task", "document", "artifact")
-TYPED_GROUPS = ("task", "wiki", "workflow", "artifact")
+TYPED_GROUPS = ("task", "wiki", "pdr", "workflow", "artifact")
 ACTIONS = ("create", "list", "search", "get", "update", "history", "archive")
 FORMATS = ("ndjson", "json", "xml", "table")
 
@@ -82,7 +82,7 @@ def _add_create(parser: argparse.ArgumentParser, group: str) -> None:
     if group == "record":
         parser.add_argument("--kind", choices=KINDS, required=True)
         parser.add_argument("--profile")
-    if group in ("record", "wiki", "workflow", "artifact"):
+    if group in ("record", "wiki", "pdr", "workflow", "artifact"):
         parser.add_argument("--file", help="payload file, or - for stdin")
         parser.add_argument("--stdin", action="store_true", help="read payload from stdin (same as --file -)")
     if group in ("record", "artifact"):
@@ -298,7 +298,8 @@ class RecordCLI:
     @staticmethod
     def _type(group: str) -> tuple[Optional[str], Optional[str]]:
         return {"record": (None, None), "task": ("task", None), "wiki": ("document", "wiki"),
-                "workflow": ("document", "workflow"), "artifact": ("artifact", None)}[group]
+                "pdr": ("document", "pdr"), "workflow": ("document", "workflow"),
+                "artifact": ("artifact", None)}[group]
 
     def _resolve(self, supplied: str, group: str = "record") -> tuple[str, dict[str, Any]]:
         kind, profile = self._type(group)
@@ -428,17 +429,17 @@ class RecordCLI:
                 feature_tags=getattr(args, "tags", None) or [],
                 required_git_roles=args.require_git_role)
             record = task_record_projection(task.to_dict())
-        elif group in ("wiki", "workflow") or (group == "record" and args.kind == "document"):
+        elif group in ("wiki", "pdr", "workflow") or (group == "record" and args.kind == "document"):
             profile = group if group != "record" else args.profile
-            if profile not in ("wiki", "workflow"):
-                raise RecordError("PROFILE_UNSUPPORTED", "Document create requires --profile wiki|workflow")
+            if profile not in ("wiki", "pdr", "workflow"):
+                raise RecordError("PROFILE_UNSUPPORTED", "Document create requires --profile wiki|pdr|workflow")
             if not args.title:
                 raise RecordError("INPUT_REQUIRED", "Document create requires --title")
             text = _read_text("-" if args.stdin else args.file)
             record = self.documents.create(record_id=args.record_id or _new_id(), title=args.title,
-                profile=profile, media_type="text/markdown" if profile == "wiki" else "application/yaml",
+                profile=profile, media_type="application/yaml" if profile == "workflow" else "text/markdown",
                 text=text, namespace=args.namespace, slug=args.slug, aliases=args.alias,
-                schema_ref=None if profile == "wiki" else WORKFLOW_SCHEMA_V1,
+                schema_ref=WORKFLOW_SCHEMA_V1 if profile == "workflow" else None,
                 required_git_roles=args.require_git_role)
         else:
             profile = getattr(args, "artifact_profile", None) or getattr(args, "profile", None)
@@ -467,11 +468,11 @@ class RecordCLI:
             else: raise RecordError("REVISION_UNSUPPORTED", "legacy task snapshots use history")
         if args.source or args.front_matter or args.rendered or args.validated:
             if record["kind"] != "document":
-                raise RecordError("RENDER_UNSUPPORTED", "source rendering is available only for wiki/workflow Documents")
+                raise RecordError("RENDER_UNSUPPORTED", "source rendering is available only for wiki/PDR/workflow Documents")
             if args.front_matter:
                 output = emit_wiki_frontmatter(record)
             elif args.rendered:
-                if record["profile"] != "wiki": raise RecordError("PROFILE_KIND_MISMATCH", "--rendered requires wiki")
+                if record["profile"] not in ("wiki", "pdr"): raise RecordError("PROFILE_KIND_MISMATCH", "--rendered requires wiki or pdr")
                 output = _render_markdown_safe(record["payload"]["text"])
             elif args.validated:
                 if record["profile"] != "workflow": raise RecordError("PROFILE_KIND_MISMATCH", "--validated requires workflow")

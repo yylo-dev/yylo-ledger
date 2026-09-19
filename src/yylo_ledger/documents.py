@@ -65,7 +65,7 @@ def _profile_payload(profile: str, text: str) -> Tuple[object, Optional[str]]:
         raise RecordError("DOCUMENT_PAYLOAD_INVALID", "Document payload must be Unicode text")
     if "\r" in text:
         raise RecordError("DOCUMENT_PAYLOAD_INVALID", "Document payload must use LF line endings")
-    if profile == "wiki":
+    if profile in ("wiki", "pdr"):
         validate_record_links(text)
         return text, None
     if profile == "workflow":
@@ -123,7 +123,7 @@ def validate_document(record: Mapping[str, Any], *, registry: Optional[ProfileRe
     if payload.get("sha256") != payload_digest(text):
         raise RecordError("DOCUMENT_DIGEST_MISMATCH", "payload digest does not match UTF-8 bytes")
     _validate_custom_metadata(record.get("custom_metadata"))
-    if record["profile"] == "wiki":
+    if record["profile"] in ("wiki", "pdr"):
         parsed = text
         validate_record_links(text, link_resolver)
     elif record["profile"] == "workflow":
@@ -181,7 +181,7 @@ def exact_update_document(record: Mapping[str, Any], *, path: str, expected: Any
 
 
 class DocumentStore:
-    """Canonical immutable revision files for wiki/workflow Records."""
+    """Canonical immutable revision files for wiki/PDR/workflow Records."""
 
     def __init__(self, juno_root: Path, *, registry: Optional[ProfileRegistry] = None,
                  project_root: Optional[Path] = None,

@@ -3074,7 +3074,7 @@ end
 
         # Command signatures — show exact syntax, required vs optional
         print("COMMANDS:")
-        print(f"  {cn} record|task|wiki|workflow|artifact ACTION ...      Native ID-first Record API v2 (no remove)")
+        print(f"  {cn} record|task|wiki|pdr|workflow|artifact ACTION ...      Native ID-first Record API v2 (no remove)")
         print(f"      ACTION: create|list|search|get|update|history|archive (where profile permits)")
         print(f"  {cn} migration inventory|plan|apply|status|verify ...    Copy legacy files into Records; never delete sources")
         print(f"      Flat task commands below are the versioned legacy v1 compatibility surface")

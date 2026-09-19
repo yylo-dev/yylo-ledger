@@ -90,6 +90,13 @@ WIKI_PROFILE = RecordProfile(
     mutable=True,
     allowed_operations=("create", "get", "list", "search", "update", "history", "archive", "render"),
 )
+PDR_PROFILE = RecordProfile(
+    name="pdr", native_kind="document", media_types=("text/markdown",),
+    schema_ref=None, renderer="markdown-safe-v1",
+    indexed_fields=("title", "namespace", "slug", "aliases", "relations", "payload.sha256"),
+    mutable=True,
+    allowed_operations=("create", "get", "list", "search", "update", "history", "archive", "render"),
+)
 WORKFLOW_SCHEMA_V1 = "https://yylo.dev/schemas/workflow/v1"
 WORKFLOW_PROFILE = RecordProfile(
     name="workflow", native_kind="document",
@@ -104,6 +111,6 @@ WORKFLOW_PROFILE = RecordProfile(
 def default_profile_registry() -> ProfileRegistry:
     # Imported lazily to keep the profile declarations independent of codecs.
     from .workflow_yaml import validate_workflow_v1
-    registry = ProfileRegistry((WIKI_PROFILE, WORKFLOW_PROFILE))
+    registry = ProfileRegistry((WIKI_PROFILE, PDR_PROFILE, WORKFLOW_PROFILE))
     registry.register_schema(WORKFLOW_SCHEMA_V1, validate_workflow_v1)
     return registry
