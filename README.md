@@ -142,6 +142,11 @@ yylo-ledger search --status todo --format table
 
 Use `--raw` for compact machine output and `--pretty` for human-oriented rendering. Structured output is bounded; request only the projection and limit you need.
 
+Empty `search`, `list`, and `ready` results succeed without stderr or a summary:
+JSON (including `--raw`) emits `[]`, NDJSON emits no records or bytes, and XML
+emits an empty `<tasks>` document. Only table/human output uses messages such as
+`No results found`. Non-empty output retains its existing payload and summary.
+
 ## Native Records
 
 The ID-first v2 API exposes general Records and typed task, wiki, workflow, and artifact profiles. The legacy flat task commands above remain the supported 0.x compatibility surface.

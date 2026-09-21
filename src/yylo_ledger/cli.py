@@ -71,9 +71,6 @@ class OutputFormatter:
         Returns:
             Formatted string
         """
-        if not tasks:
-            return ""
-
         if output_format == 'pretty':
             return OutputFormatter._format_pretty_tasks(tasks)
 
@@ -1763,13 +1760,21 @@ class TaskCLI:
         has_more = bool(limit and len(tasks) > limit)
         if has_more:
             tasks, keys = tasks[:limit], keys[:limit]
-        if not tasks:
-            print('No ready tasks found' if command == 'ready' else
-                  ('No tasks found' if command == 'list' and not any((status, tags, excluded, filters.get('open_only'))) else 'No results found'))
-            return ExitCode.SUCCESS
         if command == 'ready':
             if getattr(args, 'ready_format', None): args.format = args.ready_format
             if getattr(args, 'ready_raw', False): args.raw = True
+        if not tasks:
+            output_format, _ = self._resolve_output_style(args)
+            if output_format in ('table', 'pretty'):
+                print('No ready tasks found' if command == 'ready' else
+                      ('No tasks found' if command == 'list' and not any((status, tags, excluded, filters.get('open_only'))) else 'No results found'))
+            else:
+                # Reuse the normal serializers: [] for JSON, an empty tasks
+                # document for XML, and zero records (no bytes) for NDJSON.
+                output = self._format_output([], args)
+                if output:
+                    print(output)
+            return ExitCode.SUCCESS
         self._page_keys = keys
         print(self._format_output(self._project_broad(tasks, args), args))
         self._set_next_cursor(args, offset, tasks, result['total'], has_more=has_more)
