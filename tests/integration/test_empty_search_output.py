@@ -80,17 +80,22 @@ def test_empty_search_formats(command, collection, flags, expected):
     result = run(command, collection, flags + ["search", "--body", "absent phrase", "--limit", "50"])
     assert result.returncode == 0, result.stderr
     assert result.stderr == ""
-    assert result.stdout == expected
     if expected == "[]\n":
-        assert json.loads(result.stdout) == []
-    elif "<tasks>" in expected:
+        payload = json.loads(result.stdout)
+        assert payload['tasks'] == []
+        assert payload['summary']['total_tasks'] == 0
+        assert payload['summary']['displayed_tasks'] == 0
+    else:
+        assert result.stdout == expected
+    if "<tasks>" in expected:
         assert list(ET.fromstring(result.stdout)) == []
 
 
 @pytest.mark.parametrize("operation", ["list", "search", "ready"])
 def test_empty_shared_collections(command, collection, operation):
     result = run(command, collection, ["-f", "json", operation, "--status", "done"])
-    assert (result.returncode, result.stdout, result.stderr) == (0, "[]\n", "")
+    assert (result.returncode, result.stderr) == (0, "")
+    assert json.loads(result.stdout)['tasks'] == []
 
 
 @pytest.mark.parametrize("output_format", ["json", "ndjson", "xml", "table"])
@@ -98,10 +103,11 @@ def test_nonempty_payload_unchanged(command, collection, output_format):
     result = run(command, collection, ["-f", output_format, "search", "--body", "present task"])
     assert result.returncode == 0, result.stderr
     assert "No results found" not in result.stdout
-    # Existing summaries remain separate from the task payload.
+    # JSON owns one complete document; other wire formats stay task-only.
     if output_format == "json":
-        payload, _ = json.JSONDecoder().raw_decode(result.stdout)
-        assert payload[0]["id"] == collection[3].id
+        payload = json.loads(result.stdout)
+        assert payload['tasks'][0]["id"] == collection[3].id
+        assert payload['summary']['total_tasks'] == 1
     elif output_format == "ndjson":
         assert json.loads(result.stdout.splitlines()[0])["id"] == collection[3].id
     elif output_format == "xml":

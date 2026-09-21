@@ -140,12 +140,21 @@ yylo-ledger search --status todo --format xml
 yylo-ledger search --status todo --format table
 ```
 
-Use `--raw` for compact machine output and `--pretty` for human-oriented rendering. Structured output is bounded; request only the projection and limit you need.
+Legacy `list/search/ready/order -f json` emits exactly one object with `tasks`
+and `summary` (total_tasks, displayed_tasks, status_counts), including empty
+results. Use `--raw` for compact JSON or `-p/--pretty` with `-f json` for indented
+JSON. Without an explicit format, output defaults to pretty JSON; `--raw` makes
+it compact. Without a format, `--pretty` selects human-readable task rendering.
+Style flags may appear before or after these collection commands.
 
-Empty `search`, `list`, and `ready` results succeed without stderr or a summary:
-JSON (including `--raw`) emits `[]`, NDJSON emits no records or bytes, and XML
-emits an empty `<tasks>` document. Only table/human output uses messages such as
-`No results found`. Non-empty output retains its existing payload and summary.
+NDJSON remains one task per line, with no summary record. List/search/ready
+summaries are human-readable on stderr for non-empty NDJSON/XML/table output;
+order retains no stderr summary. Empty NDJSON emits zero bytes, XML an empty
+`<tasks>` document, and only table/human output uses `No results found`-style
+messages. `--raw` is also accepted for NDJSON (already compact), but is rejected
+with XML, table, or `--pretty` before task enumeration. Structured output is
+bounded; request only the projection and limit you need. The canonical wrapper
+passes the same contract through; runtime diagnostics stay on stderr.
 
 ## Native Records
 

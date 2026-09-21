@@ -230,13 +230,11 @@ class TestSearchOutputContracts:
             json_result = cli.run(['-c', config_path, 'search', '--status', 'todo', '--format', 'json', '--sort', 'asc', '--limit', '2'])
 
         assert json_result == ExitCode.SUCCESS
-        json_lines = [line for line in json_stdout.getvalue().strip().splitlines() if line.strip()]
-        assert len(json_lines) == 2
-        results_payload = json.loads(json_lines[0])
+        results_payload = json.loads(json_stdout.getvalue())['tasks']
         assert any('[Truncated full size: 1300 characters, use get command to read the full body]' in task['body'] for task in results_payload)
 
-    def test_search_json_format_emits_results_and_summary_documents(self, kanban_env):
-        """search --format json should emit results array followed by summary object."""
+    def test_search_json_format_emits_one_tasks_and_summary_document(self, kanban_env):
+        """search --format json emits one tasks/summary object."""
         config_path, tmp_path, storage = kanban_env
 
         storage.write_task(Task(
@@ -267,11 +265,8 @@ class TestSearchOutputContracts:
             result = cli.run(['-c', config_path, 'search', '--status', 'todo', '--format', 'json', '--limit', '2'])
 
         assert result == ExitCode.SUCCESS
-        lines = [line for line in stdout.getvalue().strip().splitlines() if line.strip()]
-        assert len(lines) == 2
-
-        results_payload = json.loads(lines[0])
-        summary_payload = json.loads(lines[1])
+        summary_payload = json.loads(stdout.getvalue())
+        results_payload = summary_payload['tasks']
 
         assert isinstance(results_payload, list)
         assert len(results_payload) == 2
@@ -305,10 +300,7 @@ class TestSearchOutputContracts:
             result = cli.run(['-c', config_path, 'search', '--status', 'todo', '--sort', 'asc', '--format', 'json', '--limit', '2'])
 
         assert result == ExitCode.SUCCESS
-        lines = [line for line in stdout.getvalue().strip().splitlines() if line.strip()]
-        assert len(lines) == 2
-
-        results_payload = json.loads(lines[0])
+        results_payload = json.loads(stdout.getvalue())['tasks']
         assert [task['id'] for task in results_payload] == ['Aa1Bb2', 'Cc3Dd4']
 
 
@@ -397,11 +389,8 @@ class TestReadyOutputContracts:
 
         assert result == ExitCode.SUCCESS
 
-        lines = [line for line in stdout.getvalue().strip().splitlines() if line.strip()]
-        assert len(lines) == 2
-
-        results_payload = json.loads(lines[0])
-        summary_payload = json.loads(lines[1])
+        summary_payload = json.loads(stdout.getvalue())
+        results_payload = summary_payload['tasks']
         assert [task['id'] for task in results_payload] == ['Ra1Dy2', 'Re3Ad4']
         assert summary_payload['summary']['total_tasks'] == 2
         assert summary_payload['summary']['displayed_tasks'] == 2
@@ -463,9 +452,7 @@ class TestStatusOrderContracts:
 
     @staticmethod
     def _first_json_document(stdout_value: str):
-        lines = [line for line in stdout_value.strip().splitlines() if line.strip()]
-        assert lines, "Expected at least one JSON document in stdout"
-        return json.loads(lines[0])
+        return json.loads(stdout_value)['tasks']
 
     def test_list_preserves_status_filter_order(self, kanban_env):
         """list --status backlog,in_progress should emit backlog tasks before in_progress."""
@@ -576,9 +563,7 @@ class TestOffsetPaginationContracts:
 
     @staticmethod
     def _first_json_document(stdout_value: str):
-        lines = [line for line in stdout_value.strip().splitlines() if line.strip()]
-        assert lines, "Expected at least one JSON document in stdout"
-        return json.loads(lines[0])
+        return json.loads(stdout_value)['tasks']
 
     def test_list_offset_applies_after_status_order_and_sort(self, kanban_env):
         """list --offset should skip the final ordered results before applying --limit."""
@@ -623,7 +608,7 @@ class TestOffsetPaginationContracts:
         assert result == ExitCode.SUCCESS
         payload = self._first_json_document(stdout.getvalue())
         assert [task['id'] for task in payload] == ['LoF002', 'LoF003']
-        summary_payload = json.loads(stdout.getvalue().strip().splitlines()[1])
+        summary_payload = json.loads(stdout.getvalue())
         assert summary_payload['summary']['total_tasks'] == 3
         assert summary_payload['summary']['displayed_tasks'] == 2
 
@@ -690,7 +675,7 @@ class TestOffsetPaginationContracts:
         assert result == ExitCode.SUCCESS
         payload = self._first_json_document(stdout.getvalue())
         assert [task['id'] for task in payload] == ['RoF002', 'RoF004']
-        summary_payload = json.loads(stdout.getvalue().strip().splitlines()[1])
+        summary_payload = json.loads(stdout.getvalue())
         assert summary_payload['summary']['total_tasks'] == 3
         assert summary_payload['summary']['displayed_tasks'] == 2
 
@@ -717,9 +702,7 @@ class TestSortParityContracts:
 
     @staticmethod
     def _first_json_document(stdout_value: str):
-        lines = [line for line in stdout_value.strip().splitlines() if line.strip()]
-        assert lines, "Expected at least one JSON document in stdout"
-        return json.loads(lines[0])
+        return json.loads(stdout_value)['tasks']
 
     def test_sort_tie_breaker_asc_is_consistent_across_list_search_ready(self, kanban_env):
         """For equal timestamps, asc ordering should be deterministic and command-consistent."""
@@ -1820,7 +1803,7 @@ class TestOrderDependencyClassification:
             result = TaskCLI().run(['-c', config_path, '--raw', 'order', '-f', 'json'])
 
         assert result == ExitCode.SUCCESS
-        assert [task['id'] for task in json.loads(stdout.getvalue())] == ['Bbbb02', 'Cccc03']
+        assert [task['id'] for task in json.loads(stdout.getvalue())['tasks']] == ['Bbbb02', 'Cccc03']
 
     def test_order_reports_missing_blocker_without_calling_it_a_cycle(self, kanban_env):
         config_path, _, storage = kanban_env

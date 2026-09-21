@@ -59,7 +59,8 @@ class OutputFormatter:
     """Format output in different formats."""
 
     @staticmethod
-    def format_tasks(tasks: List[Dict[str, Any]], output_format: str, pretty: bool = False) -> str:
+    def format_tasks(tasks: List[Dict[str, Any]], output_format: str, pretty: bool = False,
+                     summary: Optional[Dict[str, Any]] = None) -> str:
         """
         Format task list for output.
 
@@ -79,7 +80,8 @@ class OutputFormatter:
 
         elif output_format == 'json':
             indent = 2 if pretty else None
-            return json.dumps(tasks, ensure_ascii=False, indent=indent)
+            payload = {'tasks': tasks, 'summary': summary} if summary is not None else tasks
+            return json.dumps(payload, ensure_ascii=False, indent=indent)
 
         elif output_format == 'xml':
             lines = ['<?xml version="1.0" encoding="UTF-8"?>']
@@ -231,7 +233,7 @@ class TaskCLI:
         parser.add_argument(
             '--raw',
             action='store_true',
-            help='Output compact/raw format for machine processing'
+            help='Compact JSON or NDJSON only; incompatible with --pretty, XML and table'
         )
         parser.add_argument(
             '-v', '--verbose',
@@ -364,7 +366,6 @@ class TaskCLI:
         search_parser.add_argument('--fields', help='Comma-separated output fields (id is always retained)')
         search_parser.add_argument('--full', action='store_true', help='Audited alias for --projection full')
         search_parser.add_argument('--sort', choices=['asc', 'desc'], default='desc', help='Sort order by last_modified (asc: oldest first, desc: newest first)')
-        search_parser.add_argument('-p', '--pretty', action='store_true', help='Render human-readable multiline body/agent_response fields unless -f/--format is set')
         search_parser.add_argument('-f', '--format', dest='search_format', choices=['ndjson', 'json', 'xml', 'table'], metavar='FORMAT', help='Output format: ndjson, json, xml, table. JSON format includes tasks array and summary object.')
 
         # GET command
@@ -502,7 +503,6 @@ class TaskCLI:
         list_parser.add_argument('--fields', help='Comma-separated output fields (id is always retained)')
         list_parser.add_argument('--full', action='store_true', help='Audited alias for --projection full')
         list_parser.add_argument('--sort', choices=['asc', 'desc'], default='desc', help='Sort order by last_modified (asc: oldest first, desc: newest first). Default status priority is open->closed; with --status filters, provided status order is preserved.')
-        list_parser.add_argument('-p', '--pretty', action='store_true', help='Render human-readable multiline body/agent_response fields unless -f/--format is set')
         list_parser.add_argument('-f', '--format', dest='list_format', choices=['ndjson', 'json', 'xml', 'table'], metavar='FORMAT', help='Output format: ndjson, json, xml, table. JSON format includes tasks array and summary object.')
 
         # TAGS command (aggregate tag usage counts)
@@ -542,8 +542,7 @@ class TaskCLI:
         ready_parser.add_argument('--fields', help='Comma-separated output fields (id is always retained)')
         ready_parser.add_argument('--full', action='store_true', help='Audited alias for --projection full')
         ready_parser.add_argument('--sort', choices=['asc', 'desc'], default='desc', help='Sort order by last_modified (asc: oldest first, desc: newest first)')
-        ready_parser.add_argument('--raw', action='store_true', dest='ready_raw', help='Compact output for scripting')
-        ready_parser.add_argument('-p', '--pretty', action='store_true', help='Render human-readable multiline body/agent_response fields unless -f/--format is set')
+        # Collection style flags are registered together below.
         ready_parser.add_argument('-f', '--format', dest='ready_format', choices=['ndjson', 'json', 'xml', 'table'], metavar='FORMAT', help='Output format')
 
         # ORDER command (topological sort of open tasks)
@@ -557,6 +556,17 @@ class TaskCLI:
         order_parser.add_argument('--fields', help='Comma-separated output fields (id is always retained)')
         order_parser.add_argument('--full', action='store_true', help='Audited alias for --projection full')
         order_parser.add_argument('-f', '--format', dest='order_format', choices=['ndjson', 'json', 'xml', 'table'], metavar='FORMAT', help='Output format')
+
+        for collection_parser in (list_parser, search_parser, ready_parser, order_parser):
+            collection_parser.add_argument('--raw', action='store_true', default=argparse.SUPPRESS,
+                                           help='Compact JSON or NDJSON only; incompatible with --pretty, XML and table')
+            collection_parser.add_argument('-p', '--pretty', action='store_true', default=argparse.SUPPRESS,
+                                           help='Pretty-print JSON; without a format, use human-readable multiline output')
+            collection_parser.epilog = ('JSON emits one object containing tasks and summary, including empty results. '
+                                        'NDJSON emits one task per line (zero lines when empty); '
+                                        'Summary is not an NDJSON record. ' +
+                                        ('Order has no stderr summary.' if collection_parser is order_parser else
+                                         'Non-empty NDJSON/XML/table summaries are human-readable on stderr.'))
 
         # MERGE command (new workflow command for combining task files)
         merge_parser = subparsers.add_parser(
@@ -1052,12 +1062,14 @@ class TaskCLI:
 
         # New jq-style formatting logic (v1.4.0)
         if hasattr(args, 'raw') and args.raw:
-            # --raw flag: use compact output (old behavior)
+            # Raw controls whitespace, never JSON framing.
+            if not explicit_format:
+                output_format = 'json'
             pretty = False
         elif explicit_format:
             # Explicit format specified: use existing pretty logic
             pretty = args.pretty
-        elif pretty_requested and getattr(args, 'command', None) in {'get', 'show', 'list', 'search', 'ready'}:
+        elif pretty_requested and getattr(args, 'command', None) in {'get', 'show', 'list', 'search', 'ready', 'order'}:
             output_format = 'pretty'
             pretty = True
         else:
@@ -1067,13 +1079,14 @@ class TaskCLI:
 
         return output_format, pretty
 
-    def _format_output(self, tasks: List[Dict[str, Any]], args: argparse.Namespace) -> str:
+    def _format_output(self, tasks: List[Dict[str, Any]], args: argparse.Namespace,
+                       summary: Optional[Dict[str, Any]] = None) -> str:
         """Format task-list output based on format and options."""
         output_format, pretty = self._resolve_output_style(args)
         if self._pretty_was_requested(args):
             tasks = self._humanize_pretty_fields(tasks)
         tasks = [dict(order_task_fields(task)) for task in tasks]
-        return OutputFormatter.format_tasks(tasks, output_format, pretty)
+        return OutputFormatter.format_tasks(tasks, output_format, pretty, summary)
 
     def _build_tag_counts(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Build deterministic tag-count aggregates from task list."""
@@ -1769,31 +1782,36 @@ class TaskCLI:
                 print('No ready tasks found' if command == 'ready' else
                       ('No tasks found' if command == 'list' and not any((status, tags, excluded, filters.get('open_only'))) else 'No results found'))
             else:
-                # Reuse the normal serializers: [] for JSON, an empty tasks
-                # document for XML, and zero records (no bytes) for NDJSON.
-                output = self._format_output([], args)
-                if output:
-                    print(output)
+                self._print_collection([], args, result['total'], result['status_counts'])
             return ExitCode.SUCCESS
         self._page_keys = keys
-        print(self._format_output(self._project_broad(tasks, args), args))
         self._set_next_cursor(args, offset, tasks, result['total'], has_more=has_more)
-        self._show_indexed_summary(result['total'], result['status_counts'], args, len(tasks))
+        self._print_collection(tasks, args, result['total'], result['status_counts'])
         if getattr(args, 'verbose', False):
             print(f"Showing {len(tasks)} of {result['total']} tasks", file=sys.stderr)
         return ExitCode.SUCCESS
 
+    def _print_collection(self, tasks: List[Dict[str, Any]], args: argparse.Namespace,
+                          total: int, status_counts: Dict[str, int],
+                          show_summary: bool = True) -> None:
+        """One JSON document; other formats retain task-only stdout."""
+        statuses = self.config.status_values if self.config else ['backlog', 'todo', 'in_progress', 'done', 'archive']
+        summary = {'total_tasks': total, 'displayed_tasks': len(tasks),
+                   'status_counts': {s: status_counts.get(s, 0) for s in statuses},
+                   'help': 'Use --limit N to show more/fewer results'}
+        if args.command == 'order':
+            summary.pop('help')
+        if getattr(args, 'show_cursor', False):
+            summary['next_cursor'] = getattr(self, '_next_cursor', None) if tasks else None
+        output = self._format_output(self._project_broad(tasks, args), args, summary)
+        if output:
+            print(output)
+        if tasks and show_summary and self._resolve_output_style(args)[0] != 'json':
+            self._show_indexed_summary(total, status_counts, args, len(tasks))
+
     def _show_indexed_summary(self, total: int, status_counts: Dict[str, int],
                               args: argparse.Namespace, displayed: int):
         statuses = self.config.status_values if self.config and hasattr(self.config, 'status_values') else ['backlog','todo','in_progress','done','archive']
-        if self._get_output_format(args) == 'json':
-            summary = {'total_tasks': total, 'displayed_tasks': displayed,
-                       'status_counts': {s: status_counts.get(s, 0) for s in statuses},
-                       'help': 'Use --limit N to show more/fewer results'}
-            if getattr(args, 'show_cursor', False):
-                summary['next_cursor'] = getattr(self, '_next_cursor', None)
-            print(json.dumps({'summary': summary}, indent=2 if args.pretty else None))
-            return
         print('\nSUMMARY:', file=sys.stderr)
         print(f'Displayed: {displayed} of {total} total tasks' if displayed != total else f'Total tasks: {total}', file=sys.stderr)
         print('Status breakdown:', file=sys.stderr)
@@ -2631,7 +2649,10 @@ class TaskCLI:
             open_tasks = [t for t in all_tasks if t.get('status') in ('backlog', 'todo', 'in_progress')]
 
             if not open_tasks:
-                print("No open tasks to order")
+                if self._resolve_output_style(args)[0] in ('table', 'pretty'):
+                    print("No open tasks to order")
+                else:
+                    self._print_collection([], args, 0, {}, show_summary=False)
                 return ExitCode.SUCCESS
 
             # Include resolved tasks so the graph can distinguish satisfied
@@ -2672,8 +2693,11 @@ class TaskCLI:
             if order_fmt:
                 args.format = order_fmt
 
-            output = self._format_output(self._project_broad(results, args), args)
-            print(output)
+            counts = {}
+            for task in results:
+                status = task.get('status', 'unknown')
+                counts[status] = counts.get(status, 0) + 1
+            self._print_collection(results, args, len(results), counts, show_summary=False)
             return ExitCode.SUCCESS
 
         except Exception as e:
@@ -3106,9 +3130,9 @@ end
 
         # Global options
         print("GLOBAL OPTIONS:")
-        print("  -f FMT    Output: ndjson (default) | json | xml | table")
-        print("  --raw     Compact output for scripting")
-        print("  -p        Pretty-print json/xml")
+        print("  -f FMT    Output: json (default, pretty) | ndjson | xml | table")
+        print("  --raw     Compact JSON/NDJSON only; not with --pretty, XML or table")
+        print("  -p        Pretty-print JSON; without a format, human-readable tasks")
         print("  -c PATH   Config file (default: .juno_task/tasks/config.json)")
         print("  --project ALIAS   Route through an enabled and source-allowed registry alias")
         print()
@@ -3345,6 +3369,16 @@ end
                     self._print_error_hints(args_to_parse)
                     return ExitCode.INVALID_USAGE
                 raise
+
+            # Validate legacy output flags before storage initialization/enumeration.
+            # Native Record commands own their independent --raw/source contract.
+            if parsed_args.command not in ('record', *TYPED_GROUPS):
+                if getattr(parsed_args, 'raw', False):
+                    fmt = self._get_command_specific_format(parsed_args) or parsed_args.format or 'json'
+                    if fmt not in ('json', 'ndjson') or pretty_requested:
+                        print('Error: --raw supports JSON/NDJSON only and cannot be combined with --pretty; '
+                              'use -f json --raw or omit --raw. See --help.', file=sys.stderr)
+                        return ExitCode.INVALID_USAGE
 
             # Handle commands that do not require config/storage initialization
             if parsed_args.command == 'project':
