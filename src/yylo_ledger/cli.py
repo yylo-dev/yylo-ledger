@@ -30,7 +30,9 @@ from .project_registry import (
 )
 from .archive import (DEFAULT_HARD_MAX_BYTES, DEFAULT_MAX_RECORDS,
                       DEFAULT_TARGET_BYTES, archive_doctor, create_archive, plan_archive)
-from .record_cli import RecordCLI, TYPED_GROUPS, add_record_parsers
+from .record_cli import RecordCLI, TYPED_GROUPS, add_record_parsers, _format as format_records
+from .records import RecordError
+from .record_content import project_content, DEFAULT_CONTENT_BYTES, MAX_CONTENT_BYTES
 from .migration_cli import MigrationCLI, add_migration_parser
 from .skills import SKILLS, SkillInstallError, install as install_skill, status as skill_status
 from . import __version__
@@ -108,18 +110,19 @@ class OutputFormatter:
 
             # Simple table format
             lines = []
-            lines.append(f"{'ID':<8} {'Status':<12} {'Body':<40} {'Tags':<15} {'Related':<15} {'Blocked By':<15}")
+            id_width = max(8, *(len(task.get('id', '')) for task in tasks))
+            lines.append(f"{'ID':<{id_width}} {'Status':<12} {'Body':<40} {'Tags':<15} {'Related':<15} {'Blocked By':<15}")
             lines.append("-" * 110)
 
             for task in tasks:
-                task_id = task.get('id', '')[:8]
+                task_id = task.get('id', '')
                 status = task.get('status', '')[:12]
                 body = task.get('body', '')[:37] + ("..." if len(task.get('body', '')) > 37 else "")
                 tags = ', '.join(task.get('feature_tags', []) or [])[:12] + ("..." if len(', '.join(task.get('feature_tags', []) or [])) > 12 else "")
                 related = ', '.join(task.get('related_tasks', []) or [])[:12] + ("..." if len(', '.join(task.get('related_tasks', []) or [])) > 12 else "")
                 blocked = ', '.join(task.get('blocked_by', []) or [])[:12] + ("..." if len(', '.join(task.get('blocked_by', []) or [])) > 12 else "")
 
-                lines.append(f"{task_id:<8} {status:<12} {body:<40} {tags:<15} {related:<15} {blocked:<15}")
+                lines.append(f"{task_id:<{id_width}} {status:<12} {body:<40} {tags:<15} {related:<15} {blocked:<15}")
 
             return '\n'.join(lines)
 
@@ -371,8 +374,8 @@ class TaskCLI:
         # GET command
         get_parser = subparsers.add_parser(
             'get',
-            help='Get one or more tasks by ID',
-            description='Retrieve one or more tasks by their IDs'
+            help='Get any Record by ID without knowing its type',
+            description='Retrieve tasks, documents or artifacts by ID; existing task output remains compatible'
         )
         get_parser.add_argument('ids', nargs='*', help='Task ID(s) (positional, supports multiple)')
         get_parser.add_argument('-ID', '--id', dest='id_flag', help='Task ID via flag (--ID or --id)')
@@ -389,6 +392,12 @@ class TaskCLI:
         show_parser.add_argument('-ID', '--id', dest='id_flag', help='Task ID via flag (--ID or --id)')
         show_parser.add_argument('--compact', action='store_true', help='Show related tasks as IDs only, without embedding their full task bodies')
         show_parser.add_argument('-p', '--pretty', action='store_true', help='Render human-readable multiline body/agent_response fields unless -f/--format is set')
+
+        for read_parser in (get_parser, show_parser):
+            read_parser.add_argument('--content', action='store_true', help='Emit exact local/inline payload bytes for one Record; never downloads external content')
+            read_parser.add_argument('--max-content-bytes', type=int, default=DEFAULT_CONTENT_BYTES,
+                                     help=f'Content byte limit (default {DEFAULT_CONTENT_BYTES}, maximum {MAX_CONTENT_BYTES})')
+            read_parser.add_argument('-f', '--format', dest='record_get_format', choices=['ndjson', 'json', 'xml', 'table'])
 
         # UPDATE command
         update_parser = subparsers.add_parser(
@@ -974,7 +983,7 @@ class TaskCLI:
         parts = [part for part in re.split(r'[\s,]+', value.strip()) if part]
         if not parts:
             return False
-        return all(re.fullmatch(r'[A-Za-z0-9]{6}', part) for part in parts)
+        return all(TaskValidator.validate_id(part)[0] for part in parts)
 
     def _looks_like_tag_list(self, value: str) -> bool:
         """Return True when a string appears to be a tag list (space/comma separated)."""
@@ -1526,11 +1535,33 @@ class TaskCLI:
                     seen_ids.add(task_id)
                     ordered_ids.append(task_id)
 
+            explicit = getattr(args, 'content', False)
+            if explicit and len(ordered_ids) != 1:
+                raise RecordError('CONTENT_ID_REQUIRED', '--content requires exactly one Record ID')
+            limit = getattr(args, 'max_content_bytes', DEFAULT_CONTENT_BYTES)
+            if not 1 <= limit <= MAX_CONTENT_BYTES:
+                raise RecordError('CONTENT_LIMIT_INVALID', f'byte limit must be 1..{MAX_CONTENT_BYTES}')
+            records = RecordCLI(self)
+            non_tasks = {}
             task_lookup: Dict[str, Optional[Dict[str, Any]]] = {}
             missing_ids: List[str] = []
             for task_id in ordered_ids:
                 lookup_started = time.monotonic()
-                task = self.search.search_by_id(task_id)
+                try:
+                    canonical_id, record = records._resolve(task_id)
+                except RecordError as exc:
+                    if exc.code != 'RECORD_NOT_FOUND':
+                        raise
+                    missing_ids.append(task_id)
+                    continue
+                if explicit:
+                    _, content = project_content(record, records.artifacts, explicit=True, max_bytes=limit)
+                    sys.stdout.buffer.write(content)
+                    return ExitCode.SUCCESS
+                if record['kind'] != 'task':
+                    non_tasks[task_id], _ = project_content(record, records.artifacts, max_bytes=limit)
+                    continue
+                task = self.search.search_by_id(canonical_id)
                 self._emit_phase_timing('exact_task_lookup', lookup_started, task=task_id,
                                         tier='hot_or_verified_cold', found=bool(task))
                 task_lookup[task_id] = task
@@ -1539,7 +1570,7 @@ class TaskCLI:
 
             if missing_ids:
                 if len(missing_ids) == 1:
-                    print(f"Task not found: {missing_ids[0]}", file=sys.stderr)
+                    print(f"RECORD_NOT_FOUND: Task not found: {missing_ids[0]} (nor another Record kind)", file=sys.stderr)
                 else:
                     print(f"Task(s) not found: {', '.join(missing_ids)}", file=sys.stderr)
                 return ExitCode.GENERAL_ERROR
@@ -1552,6 +1583,9 @@ class TaskCLI:
 
             result_tasks: List[Dict[str, Any]] = []
             for task_id in ordered_ids:
+                if task_id in non_tasks:
+                    result_tasks.append(non_tasks[task_id])
+                    continue
                 task = task_lookup[task_id]
                 if not task:
                     continue
@@ -1583,7 +1617,7 @@ class TaskCLI:
                 # dependency enrichment. This call never validates/rebuilds the
                 # global cache and SQLite lock waits are timeout-bounded.
                 enrichment_started = time.monotonic()
-                dependency, enrichment_error = self.storage.dependency_info_best_effort(task_id)
+                dependency, enrichment_error = self.storage.dependency_info_best_effort(task['id'])
                 self._emit_phase_timing('dependency_enrichment', enrichment_started, task=task_id,
                                         cache='unavailable' if enrichment_error else 'available')
                 if enrichment_error:
@@ -1604,7 +1638,13 @@ class TaskCLI:
                 result_tasks.append(task_copy)
 
             rendering_started = time.monotonic()
-            output = self._format_output(result_tasks, args)
+            selected_format = getattr(args, 'record_get_format', None)
+            if non_tasks:
+                output = format_records(result_tasks, selected_format or self._get_output_format(args))
+            else:
+                if selected_format:
+                    args.format = selected_format
+                output = self._format_output(result_tasks, args)
             print(output)
             self._emit_phase_timing('response_rendering', rendering_started, tasks=len(result_tasks))
             self._emit_phase_timing('get_total', command_started, tasks=len(result_tasks))
@@ -3098,7 +3138,7 @@ end
         print("  {id, status, body, commit_hash, agent_response, created_date, last_modified, feature_tags[], related_tasks[], blocked_by[]}")
         available_statuses = ', '.join(self.config.status_values) if self.config and hasattr(self.config, 'status_values') else 'backlog, todo, in_progress, done, archive'
         print(f"  Statuses: {available_statuses}")
-        print("  IDs: 6-char alphanumeric (auto-generated)")
+        print("  IDs: task_/doc_/artifact_ plus 6-char suffix; existing IDs remain valid")
         print()
 
         # Command signatures — show exact syntax, required vs optional
@@ -3111,7 +3151,7 @@ end
         print(f"  {cn} project add ALIAS --path PATH [--replace]          Register an initialized project")
         print(f"  {cn} project list|show|remove|status                    Manage the opt-in user registry")
         print(f"  {cn} create  BODY | --body TEXT | --body-file PATH|- [--status S] [--tags T...] [--commit H] [--related-tasks ID...] [--blocked-by ID...] [--reject-duplicates|--no-duplicate|--discard-duplicates]")
-        print(f"  {cn} get     TASK_ID [TASK_ID ...] | --ID TASK_ID [--compact]")
+        print(f"  {cn} get     RECORD_ID [RECORD_ID ...] [--compact] [--content --max-content-bytes N]")
         print(f"  {cn} update  TASK_ID | --ID TASK_ID [--status S] [--body TEXT|--body-file PATH|-] [--response TEXT|--response-file PATH|-] [--commit H] [--tags T...] [--blocked-by ID...]")
         print(f"  {cn} mark    STATUS TASK_ID | --ID TASK_ID (--response TEXT|--response-file PATH|-) [--commit H]")
         print(f"  {cn} archive TASK_ID | --ID TASK_ID")

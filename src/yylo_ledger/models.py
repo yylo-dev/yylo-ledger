@@ -4,14 +4,13 @@ Task model and operations.
 """
 
 import json
-import random
 import re
-import string
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple, Set
 
 from .validators import TaskValidator, ValidationError
 from .codec import order_task_fields
+from .record_identity import new_id
 
 
 def _is_valid_reference_task_id(task_id: str) -> bool:
@@ -29,7 +28,7 @@ def _extract_task_ids_from_text(text: str) -> List[str]:
     if not text:
         return []
 
-    pattern = r'(?<![A-Za-z0-9])\{?([A-Za-z0-9]{6})\}?(?![A-Za-z0-9])'
+    pattern = r'(?<![A-Za-z0-9_])\{?((?:task_)?[A-Za-z0-9]{6})\}?(?![A-Za-z0-9_])'
     extracted: List[str] = []
 
     for match in re.finditer(pattern, text):
@@ -252,30 +251,8 @@ class Task:
 
     @staticmethod
     def _generate_id() -> str:
-        """
-        Generate a unique 6-character alphanumeric task ID.
-        Ensures mix of letters and numbers (not only numeric).
-
-        Returns:
-            6-character ID with mix of letters and numbers
-        """
-        chars = string.ascii_letters + string.digits
-        letters = string.ascii_letters
-        digits = string.digits
-
-        # Ensure at least 1 letter and 1 number
-        task_id = [
-            random.choice(letters),
-            random.choice(digits),
-            random.choice(chars),
-            random.choice(chars),
-            random.choice(chars),
-            random.choice(chars)
-        ]
-
-        # Shuffle to randomize positions
-        random.shuffle(task_id)
-        return ''.join(task_id)
+        """Generate a task-kind ID; retained explicit legacy IDs never change."""
+        return new_id("task")
 
     @staticmethod
     def _get_timestamp() -> str:

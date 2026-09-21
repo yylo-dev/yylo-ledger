@@ -49,12 +49,16 @@ class ContentObjectStore:
             if current.is_symlink():
                 raise RecordError("ARTIFACT_PATH_UNSAFE", "object path contains a symlink")
 
-    def verify(self, digest: str, *, size: Optional[int] = None) -> bytes:
+    def verify(self, digest: str, *, size: Optional[int] = None,
+               max_bytes: Optional[int] = None) -> bytes:
         path = self.path(digest)
         self._assert_safe_path(path)
         if not path.is_file():
             raise RecordError("ARTIFACT_OBJECT_MISSING", f"content object {digest} is missing")
-        content = path.read_bytes()
+        with path.open("rb") as stream:
+            content = stream.read() if max_bytes is None else stream.read(max_bytes + 1)
+        if max_bytes is not None and len(content) > max_bytes:
+            raise RecordError("CONTENT_TOO_LARGE", "content exceeds the requested byte limit")
         if size is not None and len(content) != size:
             raise RecordError("ARTIFACT_SIZE_MISMATCH", "content object size differs from its manifest")
         if sha256_bytes(content) != digest:

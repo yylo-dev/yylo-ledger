@@ -7,12 +7,14 @@ import re
 from datetime import datetime
 from typing import Optional, Tuple, List
 
+from .record_identity import TASK_ID_RE
+
 
 class TaskValidator:
     """Validates task data."""
 
     # Regex patterns
-    ID_PATTERN = re.compile(r'^[a-zA-Z0-9]{6}$')
+    ID_PATTERN = TASK_ID_RE
     COMMIT_HASH_PATTERN = re.compile(r'^[a-f0-9]{7,40}$')
     TAG_PATTERN = re.compile(r'^[a-zA-Z0-9_-]{1,50}$')
 
@@ -30,10 +32,11 @@ class TaskValidator:
         if not isinstance(task_id, str):
             return False, "ID must be a string"
 
+        task_id = task_id.removeprefix('task_')
         if len(task_id) != 6:
-            return False, "ID must be exactly 6 characters"
+            return False, "ID must be exactly 6 characters (optionally prefixed task_)"
 
-        if not task_id.isalnum():
+        if not task_id.isascii() or not task_id.isalnum():
             return False, "ID must be alphanumeric"
 
         if task_id.isdigit():

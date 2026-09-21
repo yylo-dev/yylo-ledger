@@ -31,7 +31,7 @@ yylo-ledger list --limit 5 --format table
 yylo-ledger doctor
 ```
 
-A successful run prints `yylo-ledger 0.3.1`, creates a six-character task ID, shows that task in the table, and exits cleanly from `doctor`.
+A successful run prints `yylo-ledger 0.3.1`, creates a `task_`-prefixed task ID, shows that task in the table, and exits cleanly from `doctor`.
 
 ### Stable channel
 
@@ -285,6 +285,43 @@ yylo-ledger completion fish > ~/.config/fish/completions/yylo-ledger.fish
 ```
 
 Use `yylo-ledger completion zsh` for Zsh and source its output from your shell configuration.
+
+## Universal record retrieval
+
+Use `yylo-ledger get ID` (or `yy ledger get ID` in a controller) without knowing
+its kind. `show` is an alias; native `record get` and typed commands remain available.
+New generated IDs use `task_`, `doc_`, or `artifact_` plus a six-character random
+suffix. Existing IDs, slugs and retained aliases still resolve; nothing is renamed.
+The prefix is an immutable storage kind, not a profile: wiki/workflow documents
+use `doc_`; new operational PDRs remain `artifact_` reports. Historical PDR
+Documents remain readable through their original IDs.
+
+```bash
+yylo-ledger get artifact_Ab1Cd2 -f json
+yylo-ledger get doc_Ef3Gh4
+yylo-ledger get Ab1Cd2                  # existing unprefixed identity
+yylo-ledger get artifact_Ab1Cd2 --content --max-content-bytes 1048576 > report.md
+```
+
+Exact reads include hot and cold records in the selected project. Prefixed IDs
+route directly to one store; unknown/malformed ID prefixes and ambiguous legacy
+identities fail explicitly. Slug/alias discovery can cost more than exact IDs.
+No global index is introduced or rebuilt for Document/Artifact exact reads;
+archive reads inspect sealed manifests and verify the selected pack/record.
+
+Flat task reads retain their existing output and dependency/`--compact` behavior.
+Other records return self-describing metadata plus UTF-8 text for readable local
+or inline payloads up to 64 KiB by default. Large/binary/non-UTF-8 payloads return
+an explicit omission reason, never a misleading partial document. `--content`
+emits exact bytes for one local/inline record (including binaries), verifies
+size/digest, and accepts an explicit bound up to 16 MiB. External/link payloads
+are never downloaded: use their URI through a separately authorized client.
+Typed native reads remain metadata/source APIs with their existing contracts.
+
+When no ID is known, use bounded `record search --projection summary --limit 20`;
+normal discovery is hot-only, with explicit `--scope archive|all` for cold discovery.
+Use typed commands for mutation and specialized rendering/validation. Benchmark
+individual exact resolution with `.venv/bin/python scripts/benchmark_record_get.py`.
 
 ## Development
 

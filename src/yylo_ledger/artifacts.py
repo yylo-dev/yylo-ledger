@@ -170,7 +170,7 @@ class ArtifactStore:
     @staticmethod
     def _validate_id(record_id: str) -> None:
         if not isinstance(record_id, str) or not RECORD_ID_RE.fullmatch(record_id):
-            raise RecordError("RECORD_INVALID", "artifact ID must be an immutable 6-character Record ID")
+            raise RecordError("RECORD_INVALID", "artifact ID must be a legacy or storage-kind-prefixed Record ID")
 
     def _revision_path(self, record_id: str, revision: int) -> Path:
         return self._record_dir(record_id) / f"{revision:08d}.json"
@@ -395,14 +395,11 @@ class ArtifactStore:
         return self.create(profile="model-output", content=content, **kwargs)
 
     def _cold_record(self, record_id: str) -> Optional[Dict[str, Any]]:
-        from .archive import ArchiveFormatError, iter_archive_envelopes
-        matches = [item for item in iter_archive_envelopes(self.root)
-                   if item["task"]["id"].casefold() == record_id.casefold()]
-        if len(matches) > 1:
-            raise ArchiveFormatError("duplicate cold Record ID: %s" % record_id)
-        if not matches:
+        from .archive import find_archive_envelope
+        envelope = find_archive_envelope(self.root, record_id)
+        if envelope is None:
             return None
-        record = matches[0]["task"]
+        record = envelope["task"]
         return record if record.get("kind") == "artifact" else None
 
     def get(self, record_id: str, revision: Optional[int] = None) -> Dict[str, Any]:
@@ -413,6 +410,7 @@ class ArtifactStore:
                 cold = self._cold_record(record_id)
                 if cold is None:
                     raise RecordError("RECORD_NOT_FOUND", f"Artifact {record_id!r} does not exist")
+                validate_record(cold)
                 self.validate_payload(cold["payload"])
                 return cold
             path = paths[-1]
@@ -425,10 +423,15 @@ class ArtifactStore:
         except FileNotFoundError as exc:
             raise RecordError("RECORD_NOT_FOUND", f"Artifact revision does not exist") from exc
         validate_record(record)
+        if record["id"] != record_id or record["kind"] != "artifact":
+            raise RecordError("RECORD_IDENTITY_MISMATCH", "Artifact identity differs from its location")
         self.validate_payload(record["payload"])
         return record
 
     def _resolve_archive_id(self, id_or_slug: str) -> str:
+        if RECORD_ID_RE.fullmatch(id_or_slug):
+            self.get(id_or_slug)
+            return id_or_slug
         matches = []
         for directory in self.records_root.glob("*/*"):
             try:

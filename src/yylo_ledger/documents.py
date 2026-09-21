@@ -16,12 +16,12 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from .git_creation import attach_creation_context, capture_creation_context
 from .profiles import ProfileRegistry, default_profile_registry
-from .records import (RecordError, RevisionProvenance, default_slug, exact_replace,
+from .records import (RECORD_ID_RE, RecordError, RevisionProvenance, default_slug, exact_replace,
                       payload_digest, validate_record, value_digest)
 from .workflow_yaml import parse_workflow_yaml
 
 _CUSTOM_NAMESPACE = re.compile(r"^(?!yylo(?:\.|$))[a-zA-Z0-9][a-zA-Z0-9_-]*(?:\.[a-zA-Z0-9][a-zA-Z0-9_-]*)+$")
-_MARKDOWN_LINK = re.compile(r"(?:\[[^\]]*\]\(record:|\[\[record:)([A-Za-z0-9]{6})(?:\)|\]\])")
+_MARKDOWN_LINK = re.compile(r"(?:\[[^\]]*\]\(record:|\[\[record:)((?:(?:task|doc|artifact)_)?[A-Za-z0-9]{6})(?:\)|\]\])")
 
 
 def _timestamp() -> str:
@@ -47,7 +47,7 @@ def validate_record_links(markdown: str, resolver: Optional[Callable[[str], obje
     # Link-like record targets not carrying an exact six-character ID fail
     # instead of being interpreted as mutable slugs.
     for target in re.findall(r"(?:\[[^\]]*\]\(record:|\[\[record:)([^\])]+)", markdown):
-        if not re.fullmatch(r"[A-Za-z0-9]{6}", target):
+        if not re.fullmatch(r"(?:(?:task|doc|artifact)_)?[A-Za-z0-9]{6}", target):
             raise RecordError("DOCUMENT_LINK_AMBIGUOUS", "typed links must contain one immutable Record ID")
     links = extract_record_links(markdown)
     if resolver is not None:
@@ -196,6 +196,8 @@ class DocumentStore:
         self.events_root = self.root / "document-ledger"
 
     def _directory(self, record_id: str) -> Path:
+        if not RECORD_ID_RE.fullmatch(record_id):
+            raise RecordError("RECORD_INVALID", "invalid Document ID")
         return self.records_root / record_id[:2].lower() / record_id
 
     def _event_directory(self, record_id: str) -> Path:
@@ -217,13 +219,9 @@ class DocumentStore:
             Path(temporary).unlink(missing_ok=True)
 
     def _cold_envelope(self, record_id: str) -> Optional[Dict[str, Any]]:
-        from .archive import ArchiveFormatError, iter_archive_envelopes
-        matches = [item for item in iter_archive_envelopes(self.root)
-                   if item["task"]["id"].casefold() == record_id.casefold()
-                   and item["task"].get("kind") == "document"]
-        if len(matches) > 1:
-            raise ArchiveFormatError("duplicate cold Document ID")
-        return matches[0] if matches else None
+        from .archive import find_archive_envelope
+        envelope = find_archive_envelope(self.root, record_id)
+        return envelope if envelope and envelope["task"].get("kind") == "document" else None
 
     def create(self, *, required_git_roles=(), **kwargs: Any) -> Dict[str, Any]:
         record = create_document(registry=self.registry, **kwargs)
@@ -249,7 +247,7 @@ class DocumentStore:
         return record
 
     def get(self, id_or_slug: str, revision: Optional[int] = None) -> Dict[str, Any]:
-        record_id = self.resolve(id_or_slug)
+        record_id = id_or_slug if RECORD_ID_RE.fullmatch(id_or_slug) else self.resolve(id_or_slug)
         paths = sorted(self._directory(record_id).glob("*.json"))
         if paths:
             path = paths[-1] if revision is None else self._directory(record_id) / f"{revision:08d}.json"
@@ -263,9 +261,14 @@ class DocumentStore:
                 raise RecordError("RECORD_NOT_FOUND", "Document does not exist")
             value = envelope["task"]
         validate_document(value, registry=self.registry)
+        if value["id"] != record_id:
+            raise RecordError("RECORD_IDENTITY_MISMATCH", "Document ID differs from its location")
         return value
 
     def resolve(self, id_or_slug: str) -> str:
+        if RECORD_ID_RE.fullmatch(id_or_slug):
+            self.get(id_or_slug)
+            return id_or_slug
         matches = []
         for directory in self.records_root.glob("*/*"):
             paths = sorted(directory.glob("*.json"))

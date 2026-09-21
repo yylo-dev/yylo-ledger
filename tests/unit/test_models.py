@@ -18,7 +18,7 @@ class TestTaskCreation:
         task = Task(body="Test task")
         assert task.body == "Test task"
         assert task.status == "backlog"
-        assert len(task.id) == 6
+        assert task.id.startswith('task_') and len(task.id) == 11
         assert task.created_date is not None
         assert task.last_modified is not None
         assert task.commit_hash is None
@@ -32,10 +32,11 @@ class TestTaskCreation:
         """Generated IDs must have both letters and digits."""
         for _ in range(20):
             task = Task(body="Test")
-            assert len(task.id) == 6
-            assert task.id.isalnum()
-            assert not task.id.isdigit(), "ID should not be all digits"
-            assert not task.id.isalpha(), "ID should not be all letters"
+            assert task.id.startswith('task_')
+            suffix = task.id.removeprefix('task_')
+            assert len(suffix) == 6 and suffix.isalnum()
+            assert not suffix.isdigit(), "suffix should not be all digits"
+            assert not suffix.isalpha(), "suffix should not be all letters"
 
     def test_creates_with_all_fields(self):
         task = Task(

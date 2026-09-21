@@ -270,8 +270,10 @@ class TaskStorage:
         if not isinstance(id_or_slug, str) or not id_or_slug:
             raise RecordError("RECORD_NOT_FOUND", "record identity is empty")
         valid, _ = TaskValidator.validate_id(id_or_slug)
-        if valid and self.find_task_exact(id_or_slug) is not None:
-            return id_or_slug
+        if valid:
+            if self.find_task_exact(id_or_slug) is not None:
+                return id_or_slug
+            raise RecordError("RECORD_NOT_FOUND", f"no Record matches {id_or_slug!r}")
         matches = []
         for task in self.read_all_tasks_complete():
             record = (dict(task) if task.get("kind") in ("document", "artifact")
@@ -286,7 +288,8 @@ class TaskStorage:
         return matches[0]
 
     def get_record(self, id_or_slug: str) -> Dict[str, Any]:
-        record_id = self.resolve_record_id(id_or_slug)
+        valid, _ = TaskValidator.validate_id(id_or_slug)
+        record_id = id_or_slug if valid else self.resolve_record_id(id_or_slug)
         task = self.find_task_exact(record_id)
         if task is None:
             raise RecordError("RECORD_NOT_FOUND", f"Record {record_id!r} disappeared")
@@ -556,7 +559,7 @@ class TaskStorage:
                 stdin=subprocess.DEVNULL, capture_output=True, timeout=5)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ValueError(refused + " (bounded pre-write revalidation failed)") from exc
-        metadata_path = rb"\.juno_task/(tasks/[a-z0-9]{2}/[A-Za-z0-9]{6}\.md|ledger/[a-z0-9]{2}/[A-Za-z0-9]{6}/[0-9]{6}\.ndjson)"
+        metadata_path = rb"\.juno_task/(tasks/[a-z0-9]{2}/(?:task_)?[A-Za-z0-9]{6}\.md|ledger/[a-z0-9]{2}/(?:task_)?[A-Za-z0-9]{6}/[0-9]{6}\.ndjson)"
         if changed.returncode or any(not re.fullmatch(metadata_path, name)
                                      for name in changed.stdout.split(b"\0") if name):
             raise ValueError(refused + " (changes extend beyond task/history checkpoints)")

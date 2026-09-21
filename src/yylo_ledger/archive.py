@@ -668,6 +668,28 @@ def scan_archive_index(juno_root: Path) -> Tuple[List[Dict[str, Any]], str]:
     return entries, _sha(_canonical(inventory))
 
 
+def find_archive_envelope(juno_root: Path, record_id: str) -> Optional[Dict[str, Any]]:
+    """Resolve an exact ID from sealed manifests, decoding only its selected row.
+
+    No disposable index rebuild or payload-wide semantic scan. Selected pack
+    bytes are still hashed: an ID prefix is not permission to skip integrity.
+    """
+    selected = None
+    for pack, manifest_path, checksum in _archive_artifact_sets(juno_root):
+        manifest = verify_archive_id_inventory(pack, manifest_path, checksum)
+        for item in manifest["records"]:
+            if item["task_id"].casefold() != record_id.casefold():
+                continue
+            if selected is not None:
+                raise ArchiveFormatError("duplicate cold Record ID: " + record_id)
+            selected = (pack, manifest, item)
+    if selected is None or selected[2]["task_id"] != record_id:
+        return None
+    pack, manifest, item = selected
+    verify_archive_pack_hash(pack, manifest)
+    return read_record(pack, item)
+
+
 def iter_archive_envelopes(juno_root: Path) -> Iterable[Dict[str, Any]]:
     """Yield every verified cold envelope while verifying each pack only once."""
     for pack, manifest_path, checksum in _archive_artifact_sets(juno_root):

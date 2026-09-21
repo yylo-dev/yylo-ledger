@@ -11,8 +11,6 @@ import hashlib
 import html
 import json
 import re
-import secrets
-import string
 import sys
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
@@ -26,6 +24,7 @@ from .profiles import WORKFLOW_SCHEMA_V1
 from .record_search import (IndexedRecord, RecordSearchIndex, RecordSearchPolicy,
                             RecordSearchQuery)
 from .records import RECORD_ID_RE, RecordError, payload_digest, task_record_projection, value_digest
+from .record_identity import identity_kind, new_id
 from .workflow_yaml import normalize_workflow_yaml
 
 KINDS = ("task", "document", "artifact")
@@ -239,12 +238,8 @@ def _render_markdown_safe(text: str) -> str:
     return "\n".join(output) + "\n"
 
 
-def _new_id() -> str:
-    alphabet = string.ascii_letters + string.digits
-    while True:
-        value = "".join(secrets.choice(alphabet) for _ in range(6))
-        if RECORD_ID_RE.fullmatch(value):
-            return value
+def _new_id(kind: str) -> str:
+    return new_id(kind)
 
 
 def _identity(record: Mapping[str, Any], supplied: Optional[str] = None) -> dict[str, Any]:
@@ -316,6 +311,15 @@ class RecordCLI:
 
     def _resolve(self, supplied: str, group: str = "record") -> tuple[str, dict[str, Any]]:
         kind, profile = self._type(group)
+        prefixed_kind = identity_kind(supplied)
+        if prefixed_kind:
+            if kind and kind != prefixed_kind:
+                raise RecordError("RECORD_KIND_MISMATCH", "ID prefix does not match requested kind")
+            kind = prefixed_kind
+        elif (re.fullmatch(r"[A-Za-z]+_[A-Za-z0-9]{6}", supplied)
+              or re.fullmatch(r"(?:task|doc|artifact)_[A-Za-z0-9]*", supplied)):
+            raise RecordError("RECORD_ID_INVALID", "unknown prefix or malformed Record ID")
+        exact = bool(RECORD_ID_RE.fullmatch(supplied))
         matches = []
         getters = (("task", self.tasks.resolve_record_id, self.tasks.get_record),
                    ("document", self.documents.resolve, self.documents.get),
@@ -324,20 +328,21 @@ class RecordCLI:
             if kind and candidate_kind != kind:
                 continue
             try:
-                record_id = resolver(supplied)
+                record_id = supplied if exact else resolver(supplied)
                 record = getter(record_id)
+                if record["kind"] != candidate_kind:
+                    continue
                 if profile and record.get("profile") != profile:
                     continue
                 matches.append((record_id, record))
             except RecordError as exc:
                 if exc.code not in ("RECORD_NOT_FOUND",):
                     raise
-        unique = {item[0]: item for item in matches}
-        if not unique:
+        if not matches:
             raise RecordError("RECORD_NOT_FOUND", f"no {group} Record matches {supplied!r}")
-        if len(unique) != 1:
+        if len(matches) != 1:
             raise RecordError("RECORD_IDENTITY_AMBIGUOUS", "identity resolves to more than one Record")
-        return next(iter(unique.values()))
+        return matches[0]
 
     def _sources(self) -> list[IndexedRecord]:
         result: list[IndexedRecord] = []
@@ -449,7 +454,7 @@ class RecordCLI:
             if not args.title:
                 raise RecordError("INPUT_REQUIRED", "Document create requires --title")
             text = _read_text("-" if args.stdin else args.file)
-            record = self.documents.create(record_id=args.record_id or _new_id(), title=args.title,
+            record = self.documents.create(record_id=args.record_id or _new_id("document"), title=args.title,
                 profile=profile, media_type="application/yaml" if profile == "workflow" else "text/markdown",
                 text=text, namespace=args.namespace, slug=args.slug, aliases=args.alias,
                 schema_ref=WORKFLOW_SCHEMA_V1 if profile == "workflow" else None,
@@ -465,7 +470,7 @@ class RecordCLI:
                 raise RecordError("ARTIFACT_MODE_INVALID", "Artifact create requires an explicit --mode")
             content = _read_bytes("-" if args.stdin else args.file)
             retention = json.loads(Path(args.retention_file).read_text()) if args.retention_file else None
-            kwargs = dict(record_id=args.record_id or _new_id(), title=args.title, profile=profile, mode=mode,
+            kwargs = dict(record_id=args.record_id or _new_id("artifact"), title=args.title, profile=profile, mode=mode,
                           content=content, media_type=args.media_type, uri=args.uri, digest=args.digest, size=args.size,
                           provenance=_pairs(args.provenance), retention=retention, predecessor_id=args.predecessor_id,
                           required_git_roles=args.require_git_role)

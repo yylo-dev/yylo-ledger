@@ -15,7 +15,7 @@ from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 RECORD_KINDS = frozenset({"task", "document", "artifact"})
 SLUG_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,199})$")
-RECORD_ID_RE = re.compile(r"^(?=.*[A-Za-z])(?=.*[0-9])[A-Za-z0-9]{6}$")
+from .record_identity import RECORD_ID_RE, identity_kind
 RELATION_TYPE_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
 PROVENANCE_FIELDS = ("actor_type", "actor", "agent", "model", "session_id", "run_id", "invocation_id")
 _GIT_HEAD_RE = re.compile(r"^[0-9a-f]{32,}$")
@@ -167,7 +167,9 @@ def validate_record(record: Mapping[str, Any]) -> None:
         if not isinstance(record[name], str):
             raise RecordError("RECORD_INVALID", f"{name} must be a string")
     if not RECORD_ID_RE.fullmatch(record["id"]):
-        raise RecordError("RECORD_INVALID", "id must be an immutable 6-character Record ID")
+        raise RecordError("RECORD_INVALID", "id must be a legacy or storage-kind-prefixed Record ID")
+    if identity_kind(record["id"]) not in (None, record["kind"]):
+        raise RecordError("RECORD_KIND_MISMATCH", "ID prefix does not match Record kind")
     if not isinstance(record["slug"], str) or not SLUG_RE.fullmatch(record["slug"]):
         raise RecordError("RECORD_INVALID", "slug must be URL-safe and 1-200 bytes")
     aliases = record.get("aliases") or []
