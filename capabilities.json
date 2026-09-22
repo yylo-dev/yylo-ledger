@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "packageId": "yylo-ledger",
-  "sourceVersion": "0.3.3",
+  "sourceVersion": "0.4.0",
   "evidenceDate": "2026-09-14",
   "prerequisites": "Python 3.8+ and a shell. A virtual environment keeps the selected Ledger executable explicit.",
   "releases": [
