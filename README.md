@@ -7,7 +7,7 @@ YYLO Ledger is a Git-native task and Record store with a shell-friendly CLI. It 
 - Python import: `yylo_ledger`
 - Source: [yylo-dev/yylo-ledger](https://github.com/yylo-dev/yylo-ledger)
 
-[![Source version](https://img.shields.io/badge/version-0.3.3-blue.svg)](https://pypi.org/project/yylo-ledger/)
+[![Source version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://pypi.org/project/yylo-ledger/)
 
 The badge identifies this source checkout; the stable and prerelease install channels are separated below.
 
@@ -21,7 +21,8 @@ Ledger owns Records and task history. [YYLO CLI](https://github.com/yylo-dev/yyl
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install 'yylo-ledger==0.3.1'
+# Exact version matching this source checkout, once published:
+python -m pip install 'yylo-ledger==0.4.0'
 yylo-ledger --version
 
 mkdir ledger-demo
@@ -31,12 +32,19 @@ yylo-ledger list --limit 5 --format table
 yylo-ledger doctor
 ```
 
-A successful run prints `yylo-ledger 0.3.1`, creates a `task_`-prefixed task ID, shows that task in the table, and exits cleanly from `doctor`.
+A successful run prints `yylo-ledger 0.4.0`, creates a `task_`-prefixed task ID, shows that task in the table, and exits cleanly from `doctor`.
 
 ### Stable channel
 
-`0.3.1` is the stable release with the native Record groups. Pin exact versions
-in automation and verify installed command help before using a native group.
+This source targets **0.4.0**: universal `get`/`show`, new `task_`, `doc_`, and
+`artifact_` identities, and bounded content reads. Existing IDs remain valid.
+YYLO CLI **0.2.9** requires Ledger **0.4.0 exactly**; older versions (including
+0.3.3), prereleases and later versions are not admitted by that CLI's exact pin.
+
+Source version changes do not publish a package or activate installed runtimes.
+The quick start above applies once 0.4.0 is published. Retained capability/release
+receipts are historical evidence and are not rewritten for this source bump. Pin exact versions in
+automation and verify installed help before using a feature.
 
 Next: [manage tasks](#task-workflow), [use native Records](#native-records), or read the [storage contract](docs/git-native-storage.md).
 

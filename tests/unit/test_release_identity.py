@@ -12,6 +12,8 @@ def test_release_tools_and_badge_use_canonical_package_version():
     version = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', package, re.MULTILINE)
     assert badge is not None and version is not None
     assert badge.group(1) == version.group(1)
+    assert f"yylo-ledger=={version.group(1)}" in readme
+    assert f"`yylo-ledger {version.group(1)}`" in readme
     assert "src', 'yylo_ledger', '__init__.py" in setup
     assert 'VERSION_FILE="$PROJECT_ROOT/src/yylo_ledger/__init__.py"' in publish
     assert "pypi.org/project/yylo-ledger/" in readme
