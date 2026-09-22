@@ -206,7 +206,7 @@ def test_cursor_is_keyset_cache_revision_bound_and_integrity_checked(tmp_path):
     for task_id in ("Ab1Cd2", "Xy9Za8", "Qr7St6"):
         storage.create_task(id=task_id, body=task_id, status="todo")
     code, out, _ = run(config, ["list", "--limit", "1", "--show-cursor", "--format", "json"])
-    cursor = json.loads(out.splitlines()[1])["summary"]["next_cursor"]
+    cursor = json.loads(out)["summary"]["next_cursor"]
     payload = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
     assert "offset" not in payload and len(payload["last"]) == 3 and payload["revision"]
     payload["last"][2] = "tampered"

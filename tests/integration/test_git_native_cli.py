@@ -40,13 +40,13 @@ def test_git_native_cli_surface(tmp_path, monkeypatch):
 
     run(config, ["create", "second", "--status", "todo"])
     code, without_cursor, _ = run(config, ["list", "--limit", "1", "--format", "json"])
-    assert "next_cursor" not in json.loads(without_cursor.splitlines()[1])["summary"]
+    assert "next_cursor" not in json.loads(without_cursor)["summary"]
     code, out, _ = run(config, ["list", "--limit", "1", "--show-cursor", "--format", "json"])
-    documents = [json.loads(line) for line in out.splitlines()]
-    cursor = documents[1]["summary"]["next_cursor"]
+    document = json.loads(out)
+    cursor = document["summary"]["next_cursor"]
     assert cursor
     code, page, _ = run(config, ["list", "--limit", "1", "--cursor", cursor, "--format", "json"])
-    assert code == 0 and json.loads(page.splitlines()[0])[0]["id"] != json.loads(out.splitlines()[0])[0]["id"]
+    assert code == 0 and json.loads(page)["tasks"][0]["id"] != document["tasks"][0]["id"]
 
     code, _, err = run(config, ["list", "--limit", "1", "--sort", "asc", "--cursor", cursor, "--format", "json"])
     assert code == ExitCode.INVALID_USAGE

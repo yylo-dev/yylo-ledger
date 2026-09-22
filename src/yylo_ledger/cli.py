@@ -394,6 +394,10 @@ class TaskCLI:
         show_parser.add_argument('-p', '--pretty', action='store_true', help='Render human-readable multiline body/agent_response fields unless -f/--format is set')
 
         for read_parser in (get_parser, show_parser):
+            read_parser.epilog = ('JSON metadata output is an array, including a single result. '
+                                  'Collection search/list JSON instead contains tasks and summary; '
+                                  'typed record/artifact get JSON returns one object. '
+                                  '--content emits payload bytes rather than metadata JSON.')
             read_parser.add_argument('--content', action='store_true', help='Emit exact local/inline payload bytes for one Record; never downloads external content')
             read_parser.add_argument('--max-content-bytes', type=int, default=DEFAULT_CONTENT_BYTES,
                                      help=f'Content byte limit (default {DEFAULT_CONTENT_BYTES}, maximum {MAX_CONTENT_BYTES})')

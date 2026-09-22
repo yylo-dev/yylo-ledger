@@ -67,7 +67,9 @@ def _add_search(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--fields", help="comma-separated fields; id is always retained")
     parser.add_argument("--sort", choices=("asc", "desc"), default="desc")
     parser.add_argument("--max-output-bytes", type=int)
-    parser.add_argument("-f", "--format", dest="record_format", choices=FORMATS, default="ndjson")
+    parser.add_argument("-f", "--format", dest="record_format", choices=FORMATS, default="ndjson",
+                        help="JSON: one object containing records and pagination metadata, even when empty; "
+                             "NDJSON: records followed by a type=page trailer. Place after the action.")
 
 
 def _add_create(parser: argparse.ArgumentParser, group: str) -> None:
@@ -158,7 +160,8 @@ def add_record_parsers(subparsers: argparse._SubParsersAction) -> None:
         get.add_argument("--front-matter", action="store_true", help="emit canonical wiki front matter")
         get.add_argument("--rendered", action="store_true", help="emit inert, HTML-escaped wiki rendering")
         get.add_argument("--validated", action="store_true", help="emit normalized validated workflow YAML")
-        get.add_argument("-f", "--format", dest="record_format", choices=FORMATS, default="json")
+        get.add_argument("-f", "--format", dest="record_format", choices=FORMATS, default="json",
+                         help="JSON returns one Record object, not an array. Place after get.")
         update = actions.add_parser("update", allow_abbrev=False)
         _add_update(update, group)
         history = actions.add_parser("history", allow_abbrev=False)

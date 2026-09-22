@@ -105,6 +105,54 @@ def test_default_and_long_format(command, collection, flags):
     assert (len(result.stdout.splitlines()) == 1) == ('--raw' in flags)
 
 
+@pytest.mark.parametrize('count', [1, 2])
+def test_exact_task_get_remains_array_with_matching_help(command, collection, count):
+    storage = TaskStorage(Config(config_path=str(collection[1])))
+    ids = [collection[3].id]
+    if count == 2:
+        ids.append(storage.create_task(body='second', status='todo').id)
+    result = run(command, collection, ['-f', 'json', 'get', *ids, '--compact'])
+    assert result.returncode == 0, result.stderr
+    assert [task['id'] for task in json.loads(result.stdout)] == ids
+    help_result = run(command, collection, ['get', '--help'])
+    assert 'array, including a single result' in ' '.join(help_result.stdout.split())
+
+
+@pytest.mark.parametrize('count', [0, 1, 3])
+@pytest.mark.parametrize('projection', ['summary', 'metadata'])
+def test_real_artifact_json_through_native_and_wrapper(command, collection, count, projection):
+    from yylo_ledger.artifacts import ArtifactStore
+    store = ArtifactStore(collection[0] / '.juno_task')
+    ids = []
+    for i in range(count):
+        item = store.create(record_id=f'artifact_Fix{i:03d}', title=f'Report {i}', profile='report', mode='inline',
+                            content=b'fixture evidence', media_type='text/plain')
+        ids.append(item['id'])
+    seen, cursor = [], None
+    while True:
+        args = ['artifact', 'search', '--profile', 'report', '--projection', projection,
+                '--limit', '1', '-f', 'json']
+        if cursor:
+            args += ['--cursor', cursor]
+        result = run(command, collection, args)
+        assert result.returncode == 0, result.stderr
+        value = json.loads(result.stdout)
+        seen.extend(record['id'] for record in value['records'])
+        cursor = value['next_cursor']
+        if cursor is None:
+            break
+    assert sorted(seen) == sorted(ids)
+    if ids:
+        result = run(command, collection, ['artifact', 'get', ids[0], '-f', 'json'])
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)['id'] == ids[0]
+    help_result = run(command, collection, ['artifact', 'search', '--help'])
+    assert 'records and pagination metadata' in ' '.join(help_result.stdout.split())
+    failure = run(command, collection, ['artifact', 'search', '--cursor', 'invalid-cursor', '-f', 'json'])
+    assert failure.returncode != 0
+    assert failure.stdout == '' and failure.stderr
+
+
 def test_independent_skill_documents_same_contract():
     skill = Path(__file__).resolve().parents[3] / 'yylo-skills/skills/ledger-tasks-yylo/SKILL.md'
     if not skill.is_file():

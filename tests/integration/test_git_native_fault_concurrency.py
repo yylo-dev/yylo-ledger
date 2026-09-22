@@ -183,7 +183,8 @@ def test_read_only_query_waits_for_cache_refresh_owner_without_replacing_cache(t
     assert holder.exitcode == 0
     assert elapsed >= 0.65
     assert all(process.returncode == 0 for process in processes), results
-    assert all(json.loads(stdout.splitlines()[0])[0]["id"] == "Ab1Cd2" for stdout, _ in results)
+    assert json.loads(results[0][0])[0]["id"] == "Ab1Cd2"  # exact get stays an array
+    assert all(json.loads(stdout)["tasks"][0]["id"] == "Ab1Cd2" for stdout, _ in results[1:])
     assert all("database is locked" not in stderr.lower() for _, stderr in results[1:]), results
 
 
